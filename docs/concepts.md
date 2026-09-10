@@ -163,9 +163,11 @@ A plugin doesn't require a spec, and a spec doesn't require a plugin. But when b
 
 ---
 
-## PTY Mirror — virtual clone ports
+## Mirror — watch or share a connection with an external tool
 
-When the MCP server opens a serial port, it has exclusive access — no other tool can read from it. PTY mirroring solves this by creating a virtual clone port backed by a pseudo-terminal (PTY). External tools connect to the clone and see the same byte stream the server sees.
+When the MCP server opens a serial port, it has exclusive access. No other tool can read from it. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
+
+Two transports are available: PTY (a virtual serial device file) and TCP (a plain network socket). Pick with `SERIAL_MCP_MIRROR_TRANSPORT`.
 
 ### Architecture
 
@@ -176,38 +178,60 @@ Always (all platforms):
 
   serial port → background reader thread → SerialBuffer → MCP tools read from here
 
-Mirror on (macOS/Linux only):
+Mirror on, PTY transport (macOS/Linux only):
 
   background reader thread also → PTY master → PTY slave (external tool reads here)
   PTY slave (rw mode) → PTY master → background reader thread → serial port
+
+Mirror on, TCP transport (all platforms):
+
+  background reader thread also → TCP client socket (external tool reads here)
+  TCP client socket (rw mode) → background reader thread → serial port
 ```
 
-### Modes
+### Modes (apply to either transport)
 
 | Mode | Data flow |
 |---|---|
-| `off` | No PTY. Serial data goes to the buffer only. |
-| `ro` | Serial data is teed to both the buffer and the PTY. External tools can observe but not write. |
-| `rw` | Same as `ro`, plus data written to the PTY slave is forwarded to the real serial port. A write lock prevents interleaving between MCP writes and PTY writes. |
+| `off` | No mirror. Serial data goes to the buffer only. |
+| `ro` | Serial data is teed to both the buffer and the mirror. The external tool can observe but not write. |
+| `rw` | Same as `ro`, plus data the external tool sends is forwarded to the real serial port. A write lock prevents interleaving between MCP writes and mirror writes. |
+
+### Choosing a transport
+
+| | PTY | TCP |
+|---|---|---|
+| **Platforms** | macOS/Linux only | All platforms, including Windows |
+| **Why the difference** | Needs `os.openpty()`, which has no Windows equivalent — Windows has no virtual COM port mechanism the server can create on its own | A plain socket. Works the same everywhere. |
+| **Client sees** | A real device file (`/dev/ttys004`, or a stable symlink like `/tmp/serial-mcp0`) | A `host:port` to connect to (telnet, or any raw TCP client) |
+| **Reconnecting** | The client owns one PTY for the life of the mirror. If it drops, most terminal apps won't notice the device came back and don't retry on their own. | Each new connection replaces the previous one. A simple poll-and-reconnect script (e.g. one that retries `connect()` until the port answers) gets a clean, working mirror every time, with no special handling needed. |
+| **Use when** | An external tool specifically needs a device file (`screen`, `minicom`) | Anything else — including watching a device from a different machine, or wanting a reconnect-friendly setup |
 
 ### Configuration
 
 ```
-SERIAL_MCP_MIRROR=off              # off (default), ro, or rw
-SERIAL_MCP_MIRROR_LINK=/tmp/serial-mcp   # symlink base path (default when mirror is enabled)
+SERIAL_MCP_MIRROR=off                     # off (default), ro, or rw
+SERIAL_MCP_MIRROR_TRANSPORT=pty           # pty (default) or tcp
+
+# PTY transport:
+SERIAL_MCP_MIRROR_LINK=/tmp/serial-mcp    # symlink base path (default when mirror is enabled)
+
+# TCP transport:
+SERIAL_MCP_MIRROR_TCP_HOST=127.0.0.1      # bind address (default: loopback only)
+SERIAL_MCP_MIRROR_TCP_PORT=0              # bind port (default: 0, OS picks a free port each time)
 ```
 
-Each connection gets a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, etc. The default base path is `/tmp/serial-mcp` — override with `SERIAL_MCP_MIRROR_LINK` if you want a different name.
+Each connection gets its own mirror. For PTY, that means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on — override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, `serial.open`'s response (and `serial.connection_status`) reports the actual bound host and port under `mirror.tcp_host`/`mirror.tcp_port` — read it from there rather than assuming a fixed number, since the default lets the OS pick one.
 
 ### Platform
 
-PTY mirroring requires macOS or Linux. On Windows, the server logs a warning and ignores the setting — the buffer and background reader still work normally.
+PTY mirroring requires macOS or Linux. If `SERIAL_MCP_MIRROR_TRANSPORT=pty` is set on Windows, the server logs a warning and disables the mirror — the buffer and background reader still work normally. **TCP mirroring works on Windows too** — if you need mirroring there, use `SERIAL_MCP_MIRROR_TRANSPORT=tcp`.
 
 ### When to use each mode
 
 - **`off`** — default. Use when the MCP server is the only thing talking to the device.
-- **`ro`** — use when you want to monitor traffic in another terminal (e.g. `screen`, `minicom`, a logic analyzer) while the agent drives the device.
-- **`rw`** — use when you need bidirectional access from both the agent and an external tool simultaneously. Be aware that both can write to the device, so coordinate accordingly.
+- **`ro`** — use when you want to monitor traffic in another terminal (e.g. `screen`, `minicom`, a logic analyzer, or plain `telnet` for the TCP transport) while the agent drives the device.
+- **`rw`** — use when you need bidirectional access from both the agent and an external tool simultaneously. Be aware that both can write to the device, so coordinate accordingly — `paced.exclusive_begin`/`paced.exclusive_end` (see Paced Writes in the tools reference) can pause the external tool's writes for the duration of a multi-call agent sequence, without giving up `rw` the rest of the time.
 
 ---
 

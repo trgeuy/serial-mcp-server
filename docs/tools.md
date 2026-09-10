@@ -405,3 +405,69 @@ Load a new plugin from a file or directory path. The path must be inside `.seria
 ```
 
 Returns `{ "ok": true, "name": "gps", "tools": ["gps.get_position"], "notified": true, "hint": "Plugin loaded on the server. The client may need a restart to call the new tools." }`.
+
+---
+
+## Paced Writes
+
+Tools for pacing writes to slow or interrupt-driven UARTs, calibrating gap sizes empirically, and pausing an `rw`-mode mirror's forwarding for a multi-call command sequence. Built in, not a plugin — requires `SERIAL_MCP_PACED=1` (unset or `0` disables all six tools below).
+
+### paced.configure
+
+Set and/or get default pacing gaps for a connection. `paced.write` uses these when `inter_char_gap_ms`/`eol_gap_ms` are omitted.
+
+```json
+{ "connection_id": "s1a2b3c4", "inter_char_gap_ms": 5, "eol_gap_ms": 20 }
+```
+
+Call with just `connection_id` to read the current defaults (`0`/`0` if never set). Returns `{ "ok": true, "connection_id": "...", "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
+
+### paced.write
+
+Write data one byte at a time, with a delay after each byte (`inter_char_gap_ms`) and a separate, usually larger, delay after a full line terminator (`eol_gap_ms`). Mirrors the pacing feature of classic terminal emulators — some UARTs drop characters sent faster than they can service their receive interrupt, and these links commonly have no flow control to prevent it.
+
+```json
+{ "connection_id": "s1a2b3c4", "data": "AT+VERSION", "append_newline": true, "inter_char_gap_ms": 5, "eol_gap_ms": 20 }
+```
+
+Same `as`/`append_newline`/`newline` options as `serial.write`. Omitted gaps fall back to `paced.configure`'s defaults (`0`/`0` if never configured). Returns `{ "ok": true, "message": "...", "bytes_written": 10, "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
+
+### paced.calibrate
+
+Run one gap-tuning measurement: send known test lines at a candidate `inter_char_gap_ms`/`eol_gap_ms`, wait for the device's echo to go quiet, then diff what was sent against what came back.
+
+```json
+{ "connection_id": "s1a2b3c4", "inter_char_gap_ms": 2, "eol_gap_ms": 10, "line_count": 3, "line_length": 32 }
+```
+
+Defaults to a few generated alphanumeric test lines if `test_lines` isn't given. Returns a diff report: `sent_bytes`, `received_bytes`, `dropped_bytes`, `inserted_bytes`, `substituted_bytes`, `first_mismatch_offset`, and `clean` (`true` only if nothing was dropped, inserted, or substituted, and something was actually received).
+
+### paced.sweep
+
+Run `paced.calibrate` across a set of candidate gaps and report which ones echoed cleanly.
+
+```json
+{ "connection_id": "s1a2b3c4", "inter_char_gap_candidates_ms": [0, 1, 2, 3], "eol_gap_candidates_ms": [0, 5, 10] }
+```
+
+Tests the full cartesian product of the two candidate lists by default (capped at 30 combinations); set `pairwise: true` to instead test them as matched pairs, one value from each list per attempt. Returns every result plus `recommendation` — the smallest clean combination found, or `null` if none were clean.
+
+### paced.exclusive_begin
+
+Pause an `rw`-mode mirror's forwarding (external tool → serial port) for `connection_id`, so a human attached to the mirror can't land bytes in the middle of a multi-call agent command sequence (e.g. send a command in one tool call, its argument in a second).
+
+```json
+{ "connection_id": "s1a2b3c4", "timeout_ms": 5000 }
+```
+
+Depth-counted: nested `exclusive_begin` calls stack, and forwarding only actually resumes once every matching `exclusive_end` has been called. **Always auto-expires** after `timeout_ms` (clamped to `[100, 30000]`, default `5000`) even if `exclusive_end` is never called — a crashed or erroring sequence can never lock a human out of the mirror indefinitely. A no-op (still returns `ok: true`) if the connection has no `rw`-mode mirror — there's nothing to pause. Returns `{ "ok": true, "message": "...", "depth": 1, "applied_timeout_ms": 5000.0 }`.
+
+### paced.exclusive_end
+
+Resume forwarding paused by `paced.exclusive_begin`.
+
+```json
+{ "connection_id": "s1a2b3c4" }
+```
+
+Decrements the nesting depth by one; forwarding only resumes once depth reaches zero. Safe to call even if nothing is currently paused (no-op). Returns `{ "ok": true, "message": "...", "depth": 0 }`.

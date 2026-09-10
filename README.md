@@ -78,7 +78,7 @@ Once connected, the agent has full serial capabilities:
 - **Attach protocol specs** to understand device-specific commands and data formats
 - **Use plugins** for high-level device operations instead of raw reads/writes
 - **Create specs and plugins** for new devices so future sessions start "knowing" your protocol
-- **PTY mirroring** — attach screen, minicom, or custom scripts to the same serial session the agent is using
+- **Mirroring** — attach screen, minicom, telnet, or custom scripts to the same serial session the agent is using, over a virtual device file (PTY, macOS/Linux) or a plain TCP socket (works on Windows too)
 
 The agent can coordinate multi-step flows automatically — e.g., toggle reset, wait for prompt, send init sequence, stream output.
 
@@ -140,7 +140,7 @@ Add to your project's `.vscode/mcp.json` (or create it):
 }
 ```
 
-Adjust `env` to match your needs — set `SERIAL_MCP_PLUGINS` to specific plugin names, or add `SERIAL_MCP_MIRROR` for PTY mirroring.
+Adjust `env` to match your needs — set `SERIAL_MCP_PLUGINS` to specific plugin names, add `SERIAL_MCP_MIRROR` (and optionally `SERIAL_MCP_MIRROR_TRANSPORT=tcp` for Windows) for mirroring, or `SERIAL_MCP_PACED=1` for the pacing tools.
 
 ## Add to Cursor
 
@@ -167,8 +167,12 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 |---|---|---|
 | `SERIAL_MCP_MAX_CONNECTIONS` | `10` | Maximum simultaneous open serial connections. |
 | `SERIAL_MCP_PLUGINS` | disabled | Plugin policy: `all` to allow all, or `name1,name2` to allow specific plugins. Unset = disabled. |
-| `SERIAL_MCP_MIRROR` | `off` | PTY mirror mode: `off`, `ro` (read-only), or `rw` (read-write). macOS and Linux only. |
-| `SERIAL_MCP_MIRROR_LINK` | `/tmp/serial-mcp` | Base path for PTY symlinks. Connections get numbered: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, etc. |
+| `SERIAL_MCP_MIRROR` | `off` | Mirror mode: `off`, `ro` (read-only), or `rw` (read-write). |
+| `SERIAL_MCP_MIRROR_TRANSPORT` | `pty` | Mirror transport: `pty` (a virtual device file, macOS/Linux only) or `tcp` (a plain socket, works on Windows too — Windows has no PTY equivalent). |
+| `SERIAL_MCP_MIRROR_LINK` | `/tmp/serial-mcp` | PTY transport only. Base path for symlinks. Connections get numbered: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, etc. |
+| `SERIAL_MCP_MIRROR_TCP_HOST` | `127.0.0.1` | TCP transport only. Bind address for the mirror socket. |
+| `SERIAL_MCP_MIRROR_TCP_PORT` | `0` | TCP transport only. Bind port; `0` lets the OS pick a free one (reported back in `serial.open`'s response). |
+| `SERIAL_MCP_PACED` | disabled | Enables the paced-write, gap-calibration, and exclusive-forwarding tools (`paced.*`). Set to `1` to enable. |
 | `SERIAL_MCP_LOG_LEVEL` | `WARNING` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Logs go to stderr. |
 | `SERIAL_MCP_TRACE` | enabled | JSONL tracing of every tool call. Set to `0`, `false`, or `no` to disable. |
 | `SERIAL_MCP_TRACE_PAYLOADS` | disabled | Include write `data` in traced args (stripped by default). |
@@ -186,6 +190,7 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 | **Protocol Specs** | `serial.spec.template`, `serial.spec.register`, `serial.spec.list`, `serial.spec.attach`, `serial.spec.get`, `serial.spec.read`, `serial.spec.search` |
 | **Tracing** | `serial.trace.status`, `serial.trace.tail` |
 | **Plugins** | `serial.plugin.template`, `serial.plugin.list`, `serial.plugin.reload`, `serial.plugin.load` |
+| **Paced Writes** (`SERIAL_MCP_PACED=1`) | `paced.configure`, `paced.write`, `paced.calibrate`, `paced.sweep`, `paced.exclusive_begin`, `paced.exclusive_end` |
 
 ---
 
@@ -241,21 +246,37 @@ Use `serial.trace.status` to check config and event count, and `serial.trace.tai
 
 ---
 
-## PTY Mirror
+## Mirror
 
-When the MCP server owns a serial port, most OSes prevent any other process from opening it. PTY mirroring creates a virtual clone port that external tools (screen, minicom, logic analyzers, custom scripts) can connect to simultaneously.
+When the MCP server owns a serial port, most OSes prevent any other process from opening it. Mirroring creates a second, external-facing copy of the same byte stream that other tools (screen, minicom, logic analyzers, telnet, custom scripts) can connect to at the same time.
+
+Two transports, picked with `SERIAL_MCP_MIRROR_TRANSPORT`:
 
 ```bash
-# Enable read-only mirror
+# PTY transport (default) — a virtual device file, macOS/Linux only
 claude mcp add serial \
   -e SERIAL_MCP_MIRROR=ro \
   -- serial_mcp
 
 # After opening a connection, the response includes the mirror path:
-# { "mirror": { "pty_path": "/dev/ttys004", "link": "/tmp/serial-mcp0", "mode": "ro" } }
+# { "mirror": { "transport": "pty", "pty_path": "/dev/ttys004", "link": "/tmp/serial-mcp0", "mode": "ro" } }
 
 # In another terminal:
 screen /tmp/serial-mcp0 115200
+```
+
+```bash
+# TCP transport — a plain socket, works on every platform including Windows
+claude mcp add serial \
+  -e SERIAL_MCP_MIRROR=ro \
+  -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
+  -- serial_mcp
+
+# The response reports the actual bound host/port (0 means the OS picked one):
+# { "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 54321, "mode": "ro" } }
+
+# In another terminal:
+telnet 127.0.0.1 54321
 ```
 
 | Mode | Behavior |
@@ -264,7 +285,7 @@ screen /tmp/serial-mcp0 115200
 | `ro` | External tools see all serial data but cannot write to the device. |
 | `rw` | External tools can both see data and write to the device. |
 
-**Platform:** macOS and Linux only. On Windows, setting `SERIAL_MCP_MIRROR` to `ro`/`rw` logs a warning and is silently ignored.
+**Platform:** the PTY transport needs `os.openpty()`, which macOS and Linux have and Windows doesn't — Windows has no equivalent way to create a virtual COM port on its own. If `SERIAL_MCP_MIRROR_TRANSPORT=pty` is set there anyway, the server logs a warning and disables the mirror. **The TCP transport works everywhere, Windows included** — use it if you need mirroring there. TCP also handles a dropped-and-reconnected client more gracefully: a new connection simply replaces the old one, so a plain poll-and-reconnect script gets a clean mirror every time, with nothing special to handle on the client side.
 
 ---
 
@@ -284,7 +305,7 @@ Open the URL with the auth token from the terminal output. The Inspector gives y
 ## Known limitations
 
 - **Single-client only.** The server handles one MCP session at a time (stdio transport). Multi-client transports (HTTP/SSE) may be added later.
-- **Exclusive access.** Without PTY mirroring, the MCP server must own the serial port exclusively.
+- **Exclusive access.** Without mirroring enabled, the MCP server must own the serial port exclusively.
 
 ---
 
