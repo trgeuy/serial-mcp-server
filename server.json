@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.es617/serial-mcp-server",
+  "name": "io.github.trgeuy/serial-mcp-server",
   "description": "Let AI agents interact with serial devices — list ports, connect, send, and read.",
   "repository": {
-    "url": "https://github.com/es617/serial-mcp-server.git",
+    "url": "https://github.com/trgeuy/serial-mcp-server.git",
     "source": "github"
   },
   "version": "0.1.3",

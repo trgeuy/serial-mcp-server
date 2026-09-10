@@ -1,6 +1,6 @@
 # Serial MCP Server
 
-<!-- mcp-name: io.github.es617/serial-mcp-server -->
+<!-- mcp-name: io.github.trgeuy/serial-mcp-server -->
 
 ![MCP](https://img.shields.io/badge/MCP-compatible-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
@@ -12,9 +12,13 @@ Works out of the box with Claude Code, VS Code with Copilot, and any MCP-compati
 
 > **Example:** Let Claude Code list available serial ports, connect to your microcontroller, reset it via DTR, and read the boot banner from your hardware.
 
+### About this fork
+
+This is a fork of [es617/serial-mcp-server](https://github.com/es617/serial-mcp-server), diverged to add features for driving vintage/real hardware over a live serial link — a cross-platform TCP mirror transport (the original's mirror is PTY-only, macOS/Linux), exclusive-forwarding pause/resume for safely sharing an `rw`-mode mirror between an agent and a human, and built-in paced writes with gap calibration for UARTs that drop characters at full speed. See [CHANGELOG.md](CHANGELOG.md) for the full list. Everything from the original still works the same way — this is additive, not a rewrite.
+
 ### Demo
 
-[Video walkthrough](https://www.youtube.com/watch?v=FdFdXjoyyAM) — connecting to a serial device, sending commands, reading responses, and creating plugins.
+[Video walkthrough](https://www.youtube.com/watch?v=FdFdXjoyyAM) — connecting to a serial device, sending commands, reading responses, and creating plugins. From the original project; still accurate for everything it covers.
 
 ---
 
@@ -51,7 +55,7 @@ The agent calls these tools, gets structured JSON back, and reasons about what t
 ## Quickstart (Claude Code)
 
 ```bash
-pip install serial-mcp-server
+pip install git+https://github.com/trgeuy/serial-mcp-server.git
 
 # Register the MCP server with Claude Code
 claude mcp add serial -- serial_mcp
@@ -61,7 +65,7 @@ Then in Claude Code, try:
 
 > "List available serial ports and connect to the one on /dev/ttyUSB0 at 115200 baud."
 
-<p align="center"><img src="https://raw.githubusercontent.com/es617/serial-mcp-server/main/docs/assets/scan.gif" alt="Scanning serial ports" width="600"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/trgeuy/serial-mcp-server/main/docs/assets/scan.gif" alt="Scanning serial ports" width="600"></p>
 
 ---
 
@@ -325,7 +329,7 @@ This software is provided as-is under the MIT License. You are responsible for w
 
 ## License
 
-This project is licensed under the MIT License — see [LICENSE](https://github.com/es617/serial-mcp-server/blob/main/LICENSE) for details.
+This project is licensed under the MIT License — see [LICENSE](https://github.com/trgeuy/serial-mcp-server/blob/main/LICENSE) for details.
 
 ## Acknowledgements
 

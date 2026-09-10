@@ -4,7 +4,7 @@
 
 ```bash
 # Clone and install in editable mode with test dependencies
-git clone https://github.com/es617/serial-mcp-server.git
+git clone https://github.com/trgeuy/serial-mcp-server.git
 cd serial-mcp-server
 pip install -e ".[test]"
 
