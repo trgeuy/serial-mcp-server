@@ -47,6 +47,12 @@ except ValueError:
     logger.warning("Invalid SERIAL_MCP_MIRROR_TCP_PORT, defaulting to 0 (ephemeral).")
     MIRROR_TCP_PORT = 0
 
+# Paced writes + gap calibration + exclusive-forwarding tools (handlers_paced).
+# Off by default, same opt-in convention as the mirror feature -- not every
+# device needs pacing, so it isn't unconditionally registered like the core
+# serial/introspection tools are.
+PACED_ENABLED = os.environ.get("SERIAL_MCP_PACED", "0").strip().lower() not in ("0", "false", "no", "")
+
 # ---------------------------------------------------------------------------
 # Response builders
 # ---------------------------------------------------------------------------

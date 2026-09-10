@@ -17,6 +17,7 @@ from mcp.types import TextContent, Tool
 
 from serial_mcp_server import (
     handlers_introspection,
+    handlers_paced,
     handlers_plugin,
     handlers_serial,
     handlers_spec,
@@ -24,6 +25,7 @@ from serial_mcp_server import (
 )
 from serial_mcp_server.helpers import (
     MAX_CONNECTIONS,
+    PACED_ENABLED,
     _err,
     _result_text,
 )
@@ -82,6 +84,10 @@ def build_server() -> tuple[Server, SerialState]:
         **handlers_spec.HANDLERS,
         **handlers_trace.HANDLERS,
     }
+
+    if PACED_ENABLED:
+        tools += handlers_paced.TOOLS
+        handlers.update(handlers_paced.HANDLERS)
 
     # --- Plugin system ---
     plugins_dir = resolve_spec_root() / "plugins"
