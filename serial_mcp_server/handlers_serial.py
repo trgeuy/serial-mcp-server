@@ -12,7 +12,16 @@ import serial as pyserial
 import serial.tools.list_ports
 from mcp.types import Tool
 
-from serial_mcp_server.helpers import MIRROR_PTY, MIRROR_PTY_LINK, _coerce_bool, _err, _ok
+from serial_mcp_server.helpers import (
+    MIRROR_PTY,
+    MIRROR_PTY_LINK,
+    MIRROR_TCP_HOST,
+    MIRROR_TCP_PORT,
+    MIRROR_TRANSPORT,
+    _coerce_bool,
+    _err,
+    _ok,
+)
 from serial_mcp_server.mirror import SerialBuffer, create_reader
 from serial_mcp_server.state import SerialConnection, SerialState
 
@@ -484,7 +493,15 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
 
     connection_id = state.generate_id()
     buf = SerialBuffer()
-    reader = create_reader(ser, buf, MIRROR_PTY, MIRROR_PTY_LINK)
+    reader = create_reader(
+        ser,
+        buf,
+        MIRROR_PTY,
+        MIRROR_PTY_LINK,
+        mirror_transport=MIRROR_TRANSPORT,
+        tcp_host=MIRROR_TCP_HOST,
+        tcp_port=MIRROR_TCP_PORT,
+    )
     reader.start()
 
     conn = SerialConnection(

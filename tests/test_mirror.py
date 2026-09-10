@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import threading
 import time
@@ -13,6 +14,7 @@ import pytest
 from serial_mcp_server.mirror import (
     ReaderThread,
     SerialBuffer,
+    TcpMirrorSession,
     create_reader,
 )
 
@@ -206,18 +208,24 @@ class TestReaderThread:
         assert hasattr(reader, "write_lock")
         assert isinstance(reader.write_lock, type(threading.Lock()))
 
-    def test_pause_resume_are_noops(self):
-        """Base ReaderThread has nothing to forward, so these must be safe no-ops."""
+    def test_pause_resume_tracked_but_no_forwarding_to_affect(self):
+        """Base ReaderThread tracks pause state faithfully -- it just never calls
+        _forward_or_drop itself, so pausing here has no observable effect on
+        anything (there's no external mirror client to gate in the first place)."""
         buf = SerialBuffer()
         ser = MagicMock()
         reader = ReaderThread(ser, buf)
         assert reader.is_forwarding_paused is False
         assert reader.pause_depth == 0
         applied = reader.pause_forwarding(timeout_ms=1000)
-        assert applied == 0.0
+        assert applied == 1000.0
+        assert reader.is_forwarding_paused is True
+        assert reader.pause_depth == 1
+        reader.resume_forwarding()
         assert reader.is_forwarding_paused is False
         assert reader.pause_depth == 0
-        reader.resume_forwarding()  # must not raise
+        reader.resume_forwarding()  # already at zero -- must not raise or go negative
+        assert reader.pause_depth == 0
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +439,146 @@ class TestExclusiveForwarding:
 
 
 # ---------------------------------------------------------------------------
+# TcpMirrorSession (cross-platform -- not Unix-gated, unlike MirrorSession)
+# ---------------------------------------------------------------------------
+
+
+class TestTcpMirrorSession:
+    def _make_mirror(self, mode: str) -> TcpMirrorSession:
+        """A TcpMirrorSession whose serial side is inert -- these tests only
+        exercise the socket side, so the serial-polling loop should never
+        see any data (return_value, not side_effect, so it can be read any
+        number of times without exhausting)."""
+        ser = MagicMock()
+        type(ser).in_waiting = PropertyMock(return_value=0)
+        ser.read.return_value = b""
+        buf = SerialBuffer()
+        return TcpMirrorSession(ser, buf, mode=mode, host="127.0.0.1", port=0)
+
+    def _connect_client(self, mirror: TcpMirrorSession) -> socket.socket:
+        client = socket.create_connection((mirror.tcp_host, mirror.tcp_port), timeout=2)
+        client.settimeout(2)
+        return client
+
+    def test_binds_ephemeral_port(self):
+        mirror = self._make_mirror("ro")
+        try:
+            assert mirror.tcp_host == "127.0.0.1"
+            assert mirror.tcp_port > 0
+        finally:
+            mirror.stop()
+
+    def test_mirror_info_shape(self):
+        mirror = self._make_mirror("rw")
+        try:
+            info = mirror.mirror_info()
+            assert info == {
+                "transport": "tcp",
+                "tcp_host": "127.0.0.1",
+                "tcp_port": mirror.tcp_port,
+                "client_connected": False,
+                "mode": "rw",
+                "forwarding_paused": False,
+                "dropped_while_paused": 0,
+            }
+        finally:
+            mirror.stop()
+
+    def test_client_receives_tee_in_ro_mode(self):
+        mirror = self._make_mirror("ro")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)  # let the reader thread's loop accept the client
+            assert mirror.client_connected is True
+            mirror._on_data(b"hello from device")
+            assert client.recv(100) == b"hello from device"
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_ro_mode_ignores_client_writes(self):
+        mirror = self._make_mirror("ro")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            client.sendall(b"human typed this")
+            time.sleep(0.15)
+            mirror.ser.write.assert_not_called()
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_client_write_forwarded_in_rw_mode(self):
+        mirror = self._make_mirror("rw")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            client.sendall(b"AT+VERSION\r")
+            time.sleep(0.15)
+            mirror.ser.write.assert_called_once_with(b"AT+VERSION\r")
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_paused_forwarding_drops_and_counts(self):
+        mirror = self._make_mirror("rw")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            mirror.pause_forwarding(timeout_ms=5_000)
+            client.sendall(b"paused bytes")
+            time.sleep(0.15)
+            mirror.ser.write.assert_not_called()
+            assert mirror.dropped_while_paused == len(b"paused bytes")
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_new_client_replaces_old(self):
+        mirror = self._make_mirror("ro")
+        client1 = client2 = None
+        try:
+            mirror.start()
+            client1 = self._connect_client(mirror)
+            time.sleep(0.15)
+            client2 = self._connect_client(mirror)
+            time.sleep(0.15)
+
+            # client1 was dropped -- its socket should now read EOF.
+            assert client1.recv(100) == b""
+
+            mirror._on_data(b"only for client2")
+            assert client2.recv(100) == b"only for client2"
+        finally:
+            if client1 is not None:
+                client1.close()
+            if client2 is not None:
+                client2.close()
+            mirror.stop()
+
+    def test_stop_closes_listener_and_client(self):
+        mirror = self._make_mirror("ro")
+        mirror.start()
+        client = self._connect_client(mirror)
+        time.sleep(0.15)
+        mirror.stop()
+        assert not mirror.alive
+        client.close()
+
+
+# ---------------------------------------------------------------------------
 # create_reader factory
 # ---------------------------------------------------------------------------
 
@@ -487,3 +635,41 @@ class TestCreateReader:
         with patch("serial_mcp_server.mirror._IS_UNIX", False):
             reader = create_reader(ser, buf, "rw", None)
         assert type(reader) is ReaderThread
+
+    def test_tcp_transport_returns_tcp_mirror_session(self):
+        ser = MagicMock()
+        type(ser).in_waiting = PropertyMock(return_value=0)
+        ser.read.return_value = b""
+        buf = SerialBuffer()
+        reader = create_reader(ser, buf, "rw", None, mirror_transport="tcp")
+        try:
+            assert isinstance(reader, TcpMirrorSession)
+            assert reader.mode == "rw"
+        finally:
+            reader.stop()
+
+    def test_tcp_transport_ignores_unix_gate(self):
+        """TCP works on Windows too -- unlike PTY, it must not be gated by _IS_UNIX."""
+        ser = MagicMock()
+        type(ser).in_waiting = PropertyMock(return_value=0)
+        ser.read.return_value = b""
+        buf = SerialBuffer()
+        with patch("serial_mcp_server.mirror._IS_UNIX", False):
+            reader = create_reader(ser, buf, "ro", None, mirror_transport="tcp")
+        try:
+            assert isinstance(reader, TcpMirrorSession)
+        finally:
+            reader.stop()
+
+    def test_tcp_transport_honors_host_and_port(self):
+        ser = MagicMock()
+        type(ser).in_waiting = PropertyMock(return_value=0)
+        ser.read.return_value = b""
+        buf = SerialBuffer()
+        reader = create_reader(ser, buf, "ro", None, mirror_transport="tcp", tcp_host="127.0.0.1", tcp_port=0)
+        try:
+            info = reader.mirror_info()
+            assert info["tcp_host"] == "127.0.0.1"
+            assert info["tcp_port"] > 0
+        finally:
+            reader.stop()

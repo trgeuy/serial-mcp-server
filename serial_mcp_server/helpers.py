@@ -29,6 +29,24 @@ MIRROR_PTY_LINK: str | None = os.environ.get("SERIAL_MCP_MIRROR_LINK", "").strip
 if MIRROR_PTY != "off" and MIRROR_PTY_LINK is None:
     MIRROR_PTY_LINK = "/tmp/serial-mcp"  # noqa: S108  # nosec B108 — intentional default, user-overridable via SERIAL_MCP_MIRROR_LINK
 
+# Mirror transport: "pty" (default, Unix-only device-file semantics) or
+# "tcp" (cross-platform; a plain socket, spoken as telnet by tools like
+# telnet-watch.sh). Loopback-only by default -- same opt-in security
+# posture as the mirror feature itself; set MIRROR_TCP_HOST to widen it.
+MIRROR_TRANSPORT = os.environ.get("SERIAL_MCP_MIRROR_TRANSPORT", "pty").strip().lower()
+if MIRROR_TRANSPORT not in ("pty", "tcp"):
+    logger.warning("Invalid SERIAL_MCP_MIRROR_TRANSPORT=%r, defaulting to 'pty'.", MIRROR_TRANSPORT)
+    MIRROR_TRANSPORT = "pty"
+MIRROR_TCP_HOST = os.environ.get("SERIAL_MCP_MIRROR_TCP_HOST", "127.0.0.1").strip()
+try:
+    # Default 0: let the OS pick an ephemeral port, reported back via
+    # mirror_info() each time -- avoids colliding with a fixed port another
+    # tool (e.g. altairsim's own --mirror socket:2323) might already use.
+    MIRROR_TCP_PORT = int(os.environ.get("SERIAL_MCP_MIRROR_TCP_PORT", "0"))
+except ValueError:
+    logger.warning("Invalid SERIAL_MCP_MIRROR_TCP_PORT, defaulting to 0 (ephemeral).")
+    MIRROR_TCP_PORT = 0
+
 # ---------------------------------------------------------------------------
 # Response builders
 # ---------------------------------------------------------------------------
