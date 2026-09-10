@@ -39,13 +39,17 @@ if MIRROR_TRANSPORT not in ("pty", "tcp"):
     MIRROR_TRANSPORT = "pty"
 MIRROR_TCP_HOST = os.environ.get("SERIAL_MCP_MIRROR_TCP_HOST", "127.0.0.1").strip()
 try:
-    # Default 0: let the OS pick an ephemeral port, reported back via
-    # mirror_info() each time -- avoids colliding with a fixed port another
-    # tool (e.g. altairsim's own --mirror socket:2323) might already use.
-    MIRROR_TCP_PORT = int(os.environ.get("SERIAL_MCP_MIRROR_TCP_PORT", "0"))
+    # Default 2424: a fixed, memorable port so client scripts (e.g.
+    # telnet-watch.sh) can hardcode it without reading serial.open's
+    # response first. Only one serial connection can bind it at a time --
+    # mirroring a second simultaneous connection needs a different port, or
+    # set this to "0" to let the OS pick an ephemeral one (reported back via
+    # mirror_info() each time), which is the only safe choice if you mirror
+    # more than one connection at once.
+    MIRROR_TCP_PORT = int(os.environ.get("SERIAL_MCP_MIRROR_TCP_PORT", "2424"))
 except ValueError:
-    logger.warning("Invalid SERIAL_MCP_MIRROR_TCP_PORT, defaulting to 0 (ephemeral).")
-    MIRROR_TCP_PORT = 0
+    logger.warning("Invalid SERIAL_MCP_MIRROR_TCP_PORT, defaulting to 2424.")
+    MIRROR_TCP_PORT = 2424
 
 # Paced writes + gap calibration + exclusive-forwarding tools (handlers_paced).
 # Off by default, same opt-in convention as the mirror feature -- not every

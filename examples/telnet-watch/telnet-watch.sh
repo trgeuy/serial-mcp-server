@@ -4,16 +4,28 @@
 #
 # Written for the TCP mirror transport (SERIAL_MCP_MIRROR_TRANSPORT=tcp, see
 # docs/concepts.md's Mirror section) — point it at the host/port serial.open
-# reports back under mirror.tcp_host/mirror.tcp_port, and it stays attached
-# for as long as you want to watch, reconnecting on its own if the mirror
-# drops (server restart, a new connection cycling in, etc.). Nothing about
-# it is specific to this project though — it works with any plain TCP
-# service you'd normally point telnet at.
+# reports back under mirror.tcp_host/mirror.tcp_port (or a named shortcut,
+# see below), and it stays attached for as long as you want to watch,
+# reconnecting on its own if the mirror drops (server restart, a new
+# connection cycling in, etc.). Nothing about the polling/reconnect logic is
+# specific to this project — it works with any plain TCP service you'd
+# normally point telnet at.
 #
 # Usage:
-#   ./telnet-watch.sh <host> <port>
+#   ./telnet-watch.sh [target|host] [port]
 #
-#   ./telnet-watch.sh 127.0.0.1 54321
+#   Named targets (no port needed) — edit the case statement below to match
+#   your own setup; these two are examples from a project that pairs this
+#   server with the altairsim emulator:
+#     ./telnet-watch.sh altairsim   -> localhost:2323 (altairsim's own --mirror socket:2323)
+#     ./telnet-watch.sh serial      -> localhost:2424 (serial_mcp's SERIAL_MCP_MIRROR_TCP_PORT default)
+#
+#   Or raw host/port, for anything else:
+#     ./telnet-watch.sh 127.0.0.1 54321
+#
+#   No arguments defaults to "serial" (localhost:2424) — serial_mcp's own
+#   default TCP mirror port. Edit the fallback below if you'd rather default
+#   to something else, or require explicit args.
 #
 # Behavior:
 #   - Polls <host>:<port> using bash's built-in /dev/tcp (no subprocess spawn,
@@ -50,13 +62,20 @@
 
 set -u
 
-if [[ -z "${1:-}" || -z "${2:-}" ]]; then
-    echo "Usage: $0 <host> <port>" >&2
-    echo "  e.g.: $0 127.0.0.1 54321" >&2
-    exit 1
-fi
-HOST="$1"
-PORT="$2"
+# Named targets, resolved with a case statement rather than an associative
+# array -- macOS ships bash 3.2 (pre-GPLv3), which has no `declare -A`.
+case "${1:-}" in
+    altairsim)
+        HOST="localhost"; PORT="2323"
+        ;;
+    serial)
+        HOST="localhost"; PORT="2424"
+        ;;
+    *)
+        HOST="${1:-localhost}"
+        PORT="${2:-2424}"
+        ;;
+esac
 POLL_INTERVAL="${POLL_INTERVAL:-0.1}"   # seconds between port checks
 SETTLE_DELAY="${SETTLE_DELAY:-0.15}"    # brief pause after port opens before connecting,
                                          # so the server has time to finish binding/listening

@@ -218,10 +218,10 @@ SERIAL_MCP_MIRROR_LINK=/tmp/serial-mcp    # symlink base path (default when mirr
 
 # TCP transport:
 SERIAL_MCP_MIRROR_TCP_HOST=127.0.0.1      # bind address (default: loopback only)
-SERIAL_MCP_MIRROR_TCP_PORT=0              # bind port (default: 0, OS picks a free port each time)
+SERIAL_MCP_MIRROR_TCP_PORT=2424           # bind port (default: 2424; set to 0 for an OS-picked ephemeral port)
 ```
 
-Each connection gets its own mirror. For PTY, that means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on — override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, `serial.open`'s response (and `serial.connection_status`) reports the actual bound host and port under `mirror.tcp_host`/`mirror.tcp_port` — read it from there rather than assuming a fixed number, since the default lets the OS pick one.
+Each connection gets its own mirror. For PTY, that means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on — override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, a fixed port only fits one bound socket, so only one connection at a time can hold it — mirroring a second simultaneous connection needs a different port, or `SERIAL_MCP_MIRROR_TCP_PORT=0` so the OS picks a free one for each. Either way, `serial.open`'s response (and `serial.connection_status`) reports the actual bound host and port under `mirror.tcp_host`/`mirror.tcp_port`.
 
 ### Platform
 

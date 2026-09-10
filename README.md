@@ -16,10 +16,6 @@ Works out of the box with Claude Code, VS Code with Copilot, and any MCP-compati
 
 This is a fork of [es617/serial-mcp-server](https://github.com/es617/serial-mcp-server), diverged to add features for driving vintage/real hardware over a live serial link — a cross-platform TCP mirror transport (the original's mirror is PTY-only, macOS/Linux), exclusive-forwarding pause/resume for safely sharing an `rw`-mode mirror between an agent and a human, and built-in paced writes with gap calibration for UARTs that drop characters at full speed. See [CHANGELOG.md](CHANGELOG.md) for the full list. Everything from the original still works the same way — this is additive, not a rewrite.
 
-### Demo
-
-[Video walkthrough](https://www.youtube.com/watch?v=FdFdXjoyyAM) — connecting to a serial device, sending commands, reading responses, and creating plugins. From the original project; still accurate for everything it covers.
-
 ---
 
 ## Why this exists
@@ -175,7 +171,7 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 | `SERIAL_MCP_MIRROR_TRANSPORT` | `pty` | Mirror transport: `pty` (a virtual device file, macOS/Linux only) or `tcp` (a plain socket, works on Windows too — Windows has no PTY equivalent). |
 | `SERIAL_MCP_MIRROR_LINK` | `/tmp/serial-mcp` | PTY transport only. Base path for symlinks. Connections get numbered: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, etc. |
 | `SERIAL_MCP_MIRROR_TCP_HOST` | `127.0.0.1` | TCP transport only. Bind address for the mirror socket. |
-| `SERIAL_MCP_MIRROR_TCP_PORT` | `0` | TCP transport only. Bind port; `0` lets the OS pick a free one (reported back in `serial.open`'s response). |
+| `SERIAL_MCP_MIRROR_TCP_PORT` | `2424` | TCP transport only. Bind port. Set to `0` to let the OS pick a free ephemeral one instead (reported back in `serial.open`'s response either way) — required if you mirror more than one connection at once, since a fixed port can only be bound by one connection's mirror at a time. |
 | `SERIAL_MCP_PACED` | disabled | Enables the paced-write, gap-calibration, and exclusive-forwarding tools (`paced.*`). Set to `1` to enable. |
 | `SERIAL_MCP_LOG_LEVEL` | `WARNING` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Logs go to stderr. |
 | `SERIAL_MCP_TRACE` | enabled | JSONL tracing of every tool call. Set to `0`, `false`, or `no` to disable. |
@@ -276,12 +272,17 @@ claude mcp add serial \
   -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
   -- serial_mcp
 
-# The response reports the actual bound host/port (0 means the OS picked one):
-# { "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 54321, "mode": "ro" } }
+# The response reports the actual bound host/port. Defaults to a fixed 2424
+# so client scripts can hardcode it; set SERIAL_MCP_MIRROR_TCP_PORT=0 to let
+# the OS pick an ephemeral one instead (needed if you mirror more than one
+# connection at once, since a fixed port only fits one bound socket):
+# { "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 2424, "mode": "ro" } }
 
 # In another terminal:
-telnet 127.0.0.1 54321
+telnet 127.0.0.1 2424
 ```
+
+`examples/telnet-watch/` includes `telnet-watch.sh`, a poll-and-reconnect wrapper for this transport — point it at a host/port (or a named shortcut you define) and it stays attached, reconnecting automatically whenever the mirror drops.
 
 | Mode | Behavior |
 |---|---|

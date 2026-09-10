@@ -4,8 +4,9 @@
 
 ### Added
 - Exclusive-forwarding pause/resume for `rw`-mode mirrors: `MirrorSession`/`TcpMirrorSession` can pause external-tool-to-serial forwarding for the duration of a multi-call agent command sequence, always auto-expiring even if never explicitly resumed. Dropped bytes are counted (`dropped_while_paused`), not buffered and replayed.
-- TCP mirror transport (`SERIAL_MCP_MIRROR_TRANSPORT=tcp`, alongside the existing `pty` default): a plain socket, works on every platform including Windows (the PTY transport needs `os.openpty()`, which Windows has no equivalent for). A new client connection replaces any existing one rather than being refused, so a simple poll-and-reconnect script always gets a clean mirror. Configurable via `SERIAL_MCP_MIRROR_TCP_HOST`/`SERIAL_MCP_MIRROR_TCP_PORT` (default: loopback, OS-assigned ephemeral port).
+- TCP mirror transport (`SERIAL_MCP_MIRROR_TRANSPORT=tcp`, alongside the existing `pty` default): a plain socket, works on every platform including Windows (the PTY transport needs `os.openpty()`, which Windows has no equivalent for). A new client connection replaces any existing one rather than being refused, so a simple poll-and-reconnect script always gets a clean mirror. Configurable via `SERIAL_MCP_MIRROR_TCP_HOST`/`SERIAL_MCP_MIRROR_TCP_PORT` (default: loopback, fixed port `2424` — set to `0` for an OS-assigned ephemeral port, required if mirroring more than one connection at once).
 - `paced.*` tools, built in and opt-in via `SERIAL_MCP_PACED=1`: `paced.configure`, `paced.write`, `paced.calibrate`, `paced.sweep` (byte-paced writes and empirical gap tuning for UARTs that drop characters at full speed), plus `paced.exclusive_begin`/`paced.exclusive_end` (the pause/resume tools above, exposed at the tool level).
+- `examples/telnet-watch/`: a poll-and-reconnect wrapper around `telnet` for the TCP mirror transport, with an editable named-shortcut table for hardcoding your own host/port pairs.
 
 ### Changed
 - `mirror_info()` now reports `transport` (`"pty"` or `"tcp"`) on every mirrored connection, plus `forwarding_paused`/`dropped_while_paused`.

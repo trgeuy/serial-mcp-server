@@ -2,23 +2,26 @@
 
 A small poll-and-reconnect wrapper around `telnet`, written for the TCP mirror transport (`SERIAL_MCP_MIRROR_TRANSPORT=tcp` — see the Mirror section in [docs/concepts.md](../../docs/concepts.md)). Point it at the mirror's `host`/`port` and it stays attached for as long as you want to watch, reconnecting automatically whenever the mirror drops — a server restart, or simply a new connection cycling in (the TCP transport replaces the old client rather than refusing the new one, for exactly this reason).
 
-Nothing about it is specific to this project — it works with any plain TCP service you'd normally point `telnet` at.
+The polling/reconnect logic isn't specific to this project — it works with any plain TCP service you'd normally point `telnet` at. It also has an editable `case` statement for named shortcuts (e.g. `./telnet-watch.sh serial` instead of typing out `localhost 2424`), pre-populated with an example pair from a project that pairs this server with an Altair 8800 emulator called altairsim; edit it to match your own setup.
 
 ## Quick start
 
-Open a connection with the mirror enabled:
+The TCP mirror binds a fixed port by default (`SERIAL_MCP_MIRROR_TCP_PORT`, default `2424`), so once it's configured you don't need to read the port back from `serial.open` each time:
+
+```bash
+./telnet-watch.sh serial          # named shortcut -> localhost:2424
+./telnet-watch.sh 127.0.0.1 2424  # equivalent, spelled out
+```
+
+If you set `SERIAL_MCP_MIRROR_TCP_PORT=0` instead (required when mirroring more than one connection at once, since a fixed port only fits one bound socket), read the actual bound port from `serial.open`'s response each time:
 
 ```
 serial.open → { "port": "/dev/ttyUSB0", ... }
 ```
 
-The response reports where to connect:
-
 ```json
 { "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 54321, "mode": "ro" } }
 ```
-
-Then, in another terminal:
 
 ```bash
 ./telnet-watch.sh 127.0.0.1 54321
