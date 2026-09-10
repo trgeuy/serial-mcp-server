@@ -37,11 +37,11 @@ Returns:
 }
 ```
 
-Fields like `vid`, `pid`, `serial_number`, `manufacturer`, and `product` are included when available.
+Fields such as `vid`, `pid`, `serial_number`, `manufacturer`, and `product` appear when they are available.
 
 ### serial.open
 
-Open a serial port connection. Returns a `connection_id` for use with other tools. Defaults are 115200 baud, 8N1, `\r\n` line terminator.
+Open a serial port connection. It returns a `connection_id` for use with other tools. The defaults are 115200 baud, 8N1, and a `\r\n` line terminator.
 
 ```json
 {
@@ -85,11 +85,11 @@ Returns:
 }
 ```
 
-The `mirror` field is only present when `SERIAL_MCP_MIRROR` is set to `ro` or `rw`.
+The `mirror` field appears only when `SERIAL_MCP_MIRROR` is `ro` or `rw`.
 
 ### serial.close
 
-Close a serial port connection and release the port.
+Close a serial port connection. This releases the port.
 
 ```json
 { "connection_id": "s1a2b3c4" }
@@ -97,17 +97,17 @@ Close a serial port connection and release the port.
 
 ### serial.connection_status
 
-Check whether a serial connection is still open and return its configuration.
+Check whether a serial connection is still open. Return its configuration.
 
 ```json
 { "connection_id": "s1a2b3c4" }
 ```
 
-Returns `{ "ok": true, "is_open": true, "config": { ... }, "buffered_bytes": 0 }`. Includes `mirror` when active.
+Returns `{ "ok": true, "is_open": true, "config": { ... }, "buffered_bytes": 0 }`. The response includes `mirror` when the mirror is active.
 
 ### serial.read
 
-Read up to `nbytes` from a serial port. Returns immediately with whatever data is available within the timeout.
+Read up to `nbytes` from a serial port. It returns immediately with whatever data is available within the timeout.
 
 ```json
 { "connection_id": "s1a2b3c4", "nbytes": 256, "timeout_ms": 500, "as": "text" }
@@ -136,26 +136,26 @@ Write data to a serial port.
 { "connection_id": "s1a2b3c4", "data": "AT+VERSION", "append_newline": true }
 ```
 
-- `as`: `"text"` (default), `"hex"`, or `"base64"` — how to interpret the `data` string
-- `append_newline`: append the connection's newline (`\r\n` by default) after data
+- `as`: `"text"` (default), `"hex"`, or `"base64"`. Tells the server how to read the `data` string.
+- `append_newline`: if true, adds the connection's newline (`\r\n` by default) after the data.
 
 Returns `{ "ok": true, "message": "Wrote 12 byte(s) to /dev/ttyUSB0.", "bytes_written": 12 }`.
 
 ### serial.readline
 
-Read a line from the serial port (reads until the newline character is received or `max_bytes` is reached). Uses the connection's newline setting by default.
+Read a line from the serial port. It reads until it receives the newline character, or until it reaches `max_bytes`. By default, it uses the connection's newline setting.
 
 ```json
 { "connection_id": "s1a2b3c4", "timeout_ms": 1000, "max_bytes": 4096 }
 ```
 
-Only `connection_id` is required. Supports `as` and `newline` overrides.
+Only `connection_id` is required. It supports `as` and `newline` overrides.
 
 Returns `{ "ok": true, "n_read": 15, "data": "OK 200 ready\r\n", "format": "text" }`.
 
 ### serial.read_until
 
-Read from the serial port until a delimiter string is received or `max_bytes` is reached.
+Read from the serial port until it receives a delimiter string, or until it reaches `max_bytes`.
 
 ```json
 { "connection_id": "s1a2b3c4", "delimiter": ">", "max_bytes": 4096 }
@@ -165,7 +165,7 @@ Only `connection_id` is required. Default delimiter is `\n`.
 
 ### serial.flush
 
-Flush serial port buffers (discard pending data).
+Flush the serial port buffers. This discards pending data.
 
 ```json
 { "connection_id": "s1a2b3c4", "what": "both" }
@@ -191,7 +191,7 @@ Set the RTS (Request To Send) control line. Usage is device-specific.
 
 ### serial.pulse_dtr
 
-Pulse the DTR line: sets low, waits `duration_ms`, then sets high. Commonly used to reset microcontrollers.
+Pulse the DTR line. It sets the line low, waits `duration_ms`, then sets it high. You can use this to reset microcontrollers.
 
 ```json
 { "connection_id": "s1a2b3c4", "duration_ms": 100 }
@@ -201,7 +201,7 @@ Only `connection_id` is required. Default duration is 100ms.
 
 ### serial.pulse_rts
 
-Pulse the RTS line: sets low, waits `duration_ms`, then sets high. Some devices use RTS to enter bootloader mode.
+Pulse the RTS line. It sets the line low, waits `duration_ms`, then sets it high. Some devices use RTS to enter bootloader mode.
 
 ```json
 { "connection_id": "s1a2b3c4", "duration_ms": 100 }
@@ -213,7 +213,7 @@ Pulse the RTS line: sets low, waits `duration_ms`, then sets high. Some devices 
 
 ### serial.connections.list
 
-List all open serial connections with their status, port, configuration, and timestamps. Useful for recovering connection IDs after context loss.
+List all open serial connections, with their status, port, configuration, and timestamps. Use this to recover connection IDs after context loss.
 
 ```json
 {}
@@ -243,13 +243,13 @@ Returns:
 }
 ```
 
-The `mirror` field is only present on connections where `SERIAL_MCP_MIRROR` is `ro` or `rw`. `buffered_bytes` shows how many unread bytes are in the connection's read buffer.
+The `mirror` field appears only on connections where `SERIAL_MCP_MIRROR` is `ro` or `rw`. `buffered_bytes` shows how many unread bytes are in the connection's read buffer.
 
 ---
 
 ## Protocol Specs
 
-Tools for managing serial device protocol specs. Specs are markdown files with YAML front-matter stored in `.serial_mcp/specs/`.
+These tools manage serial device protocol specs. Specs are markdown files with YAML front-matter, stored in `.serial_mcp/specs/`.
 
 ### serial.spec.template
 
@@ -263,7 +263,7 @@ Returns `{ "ok": true, "template": "---\nkind: serial-protocol\n...", "suggested
 
 ### serial.spec.register
 
-Register a spec file in the index. Validates YAML front-matter (requires `kind: serial-protocol` and `name`). The path must be inside the project directory.
+Register a spec file in the index. This validates the YAML front-matter. It requires `kind: serial-protocol` and `name` fields. The path must be inside the project directory.
 
 ```json
 { "path": ".serial_mcp/specs/mydevice.md" }
@@ -283,7 +283,7 @@ Returns `{ "ok": true, "specs": [...], "count": 2 }`.
 
 ### serial.spec.attach
 
-Attach a registered spec to a connection session (in-memory only). The spec will be available via `serial.spec.get` for the duration of the connection.
+Attach a registered spec to a connection session. The server keeps this only in memory. The spec stays available through `serial.spec.get` for the life of the connection.
 
 ```json
 { "connection_id": "s1a2b3c4", "spec_id": "a1b2c3d4e5f67890" }
@@ -291,7 +291,7 @@ Attach a registered spec to a connection session (in-memory only). The spec will
 
 ### serial.spec.get
 
-Get the attached spec for a connection (returns `null` if none attached).
+Get the attached spec for a connection. Returns `null` if no spec is attached.
 
 ```json
 { "connection_id": "s1a2b3c4" }
@@ -299,7 +299,7 @@ Get the attached spec for a connection (returns `null` if none attached).
 
 ### serial.spec.read
 
-Read full spec content, file path, and metadata by spec_id.
+Read the full spec content, file path, and metadata for a given `spec_id`.
 
 ```json
 { "spec_id": "a1b2c3d4e5f67890" }
@@ -307,7 +307,7 @@ Read full spec content, file path, and metadata by spec_id.
 
 ### serial.spec.search
 
-Full-text search over a spec's content. Returns matching snippets with line numbers and context.
+Search the full text of a spec's content. Returns matching snippets with line numbers and context.
 
 ```json
 { "spec_id": "a1b2c3d4e5f67890", "query": "baud rate", "k": 10 }
@@ -317,11 +317,11 @@ Full-text search over a spec's content. Returns matching snippets with line numb
 
 ## Tracing
 
-Tools for inspecting the JSONL trace log. Tracing is enabled by default and records every tool call.
+These tools inspect the JSONL trace log. Tracing is on by default. It records every tool call.
 
 ### serial.trace.status
 
-Return tracing config and event count.
+Return the tracing configuration and the event count.
 
 ```json
 {}
@@ -331,7 +331,7 @@ Returns `{ "ok": true, "enabled": true, "event_count": 42, "file_path": ".serial
 
 ### serial.trace.tail
 
-Return last N trace events (default 50).
+Return the last N trace events. The default is 50.
 
 ```json
 { "n": 20 }
@@ -343,11 +343,11 @@ Returns `{ "ok": true, "events": [{ "ts": "...", "event": "tool_call_start", "to
 
 ## Plugins
 
-Tools for managing user plugins. Plugins live in `.serial_mcp/plugins/` and can add device-specific tools without modifying the core server. Requires `SERIAL_MCP_PLUGINS` env var to be set.
+These tools manage user plugins. Plugins live in `.serial_mcp/plugins/`. They add device-specific tools without changing the core server. You must set the `SERIAL_MCP_PLUGINS` environment variable to use them.
 
 ### serial.plugin.template
 
-Return a Python plugin template. Optionally pre-fill with a device name.
+Return a Python plugin template. You can pre-fill it with a device name.
 
 ```json
 { "device_name": "MyDevice" }
@@ -384,11 +384,11 @@ Returns:
 }
 ```
 
-The `meta` field is plugin-defined (optional). Common keys: `description`, `device_name_contains`.
+The plugin defines the `meta` field; it is optional. Common keys are `description` and `device_name_contains`.
 
 ### serial.plugin.reload
 
-Hot-reload a plugin by name. Re-imports the module and refreshes tools.
+Hot-reload a plugin by name. This re-imports the module and refreshes its tools.
 
 ```json
 { "name": "gps" }
@@ -410,57 +410,57 @@ Returns `{ "ok": true, "name": "gps", "tools": ["gps.get_position"], "notified":
 
 ## Paced Writes
 
-Tools for pacing writes to slow or interrupt-driven UARTs, calibrating gap sizes empirically, and pausing an `rw`-mode mirror's forwarding for a multi-call command sequence. Built in, not a plugin — requires `SERIAL_MCP_PACED=1` (unset or `0` disables all six tools below).
+These tools pace writes to slow or interrupt-driven UARTs. They calibrate gap sizes by testing them, and they can pause an `rw`-mode mirror's forwarding during a multi-call command sequence. These tools are built in, not a plugin. Set `SERIAL_MCP_PACED=1` to turn on all six tools below. Leave it unset, or set it to `0`, to turn them off.
 
 ### paced.configure
 
-Set and/or get default pacing gaps for a connection. `paced.write` uses these when `inter_char_gap_ms`/`eol_gap_ms` are omitted.
+Set or get the default pacing gaps for a connection. `paced.write` uses these values when you omit `inter_char_gap_ms` or `eol_gap_ms`.
 
 ```json
 { "connection_id": "s1a2b3c4", "inter_char_gap_ms": 5, "eol_gap_ms": 20 }
 ```
 
-Call with just `connection_id` to read the current defaults (`0`/`0` if never set). Returns `{ "ok": true, "connection_id": "...", "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
+Call with only `connection_id` to read the current defaults. Both default to `0` if never set. Returns `{ "ok": true, "connection_id": "...", "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
 
 ### paced.write
 
-Write data one byte at a time, with a delay after each byte (`inter_char_gap_ms`) and a separate, usually larger, delay after a full line terminator (`eol_gap_ms`). Mirrors the pacing feature of classic terminal emulators — some UARTs drop characters sent faster than they can service their receive interrupt, and these links commonly have no flow control to prevent it.
+Write data one byte at a time. It adds a delay after each byte (`inter_char_gap_ms`), and a separate, usually larger, delay after a full line terminator (`eol_gap_ms`). This mirrors the pacing feature of classic terminal emulators. Some UARTs drop characters when you send them faster than the UART can service its receive interrupt. These links often have no flow control to stop this.
 
 ```json
 { "connection_id": "s1a2b3c4", "data": "AT+VERSION", "append_newline": true, "inter_char_gap_ms": 5, "eol_gap_ms": 20 }
 ```
 
-Same `as`/`append_newline`/`newline` options as `serial.write`. Omitted gaps fall back to `paced.configure`'s defaults (`0`/`0` if never configured). Returns `{ "ok": true, "message": "...", "bytes_written": 10, "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
+It takes the same `as`, `append_newline`, and `newline` options as `serial.write`. If you omit a gap value, it falls back to `paced.configure`'s defaults (`0` if never configured). Returns `{ "ok": true, "message": "...", "bytes_written": 10, "inter_char_gap_ms": 5.0, "eol_gap_ms": 20.0 }`.
 
 ### paced.calibrate
 
-Run one gap-tuning measurement: send known test lines at a candidate `inter_char_gap_ms`/`eol_gap_ms`, wait for the device's echo to go quiet, then diff what was sent against what came back.
+Run one gap-tuning measurement. It sends known test lines at a candidate `inter_char_gap_ms` and `eol_gap_ms`. It waits for the device's echo to go quiet, then compares what it sent against what came back.
 
 ```json
 { "connection_id": "s1a2b3c4", "inter_char_gap_ms": 2, "eol_gap_ms": 10, "line_count": 3, "line_length": 32 }
 ```
 
-Defaults to a few generated alphanumeric test lines if `test_lines` isn't given. Returns a diff report: `sent_bytes`, `received_bytes`, `dropped_bytes`, `inserted_bytes`, `substituted_bytes`, `first_mismatch_offset`, and `clean` (`true` only if nothing was dropped, inserted, or substituted, and something was actually received).
+If you do not give `test_lines`, it generates a few alphanumeric test lines by default. It returns a comparison report: `sent_bytes`, `received_bytes`, `dropped_bytes`, `inserted_bytes`, `substituted_bytes`, `first_mismatch_offset`, and `clean`. `clean` is `true` only if nothing was dropped, inserted, or substituted, and the device sent something back.
 
 ### paced.sweep
 
-Run `paced.calibrate` across a set of candidate gaps and report which ones echoed cleanly.
+Run `paced.calibrate` across a set of candidate gaps. Report which ones echoed cleanly.
 
 ```json
 { "connection_id": "s1a2b3c4", "inter_char_gap_candidates_ms": [0, 1, 2, 3], "eol_gap_candidates_ms": [0, 5, 10] }
 ```
 
-Tests the full cartesian product of the two candidate lists by default (capped at 30 combinations); set `pairwise: true` to instead test them as matched pairs, one value from each list per attempt. Returns every result plus `recommendation` — the smallest clean combination found, or `null` if none were clean.
+By default, it tests the full cartesian product of the two candidate lists, capped at 30 combinations. Set `pairwise: true` to test them as matched pairs instead, one value from each list per attempt. It returns every result, plus a `recommendation`: the smallest clean combination found, or `null` if none were clean.
 
 ### paced.exclusive_begin
 
-Pause an `rw`-mode mirror's forwarding (external tool → serial port) for `connection_id`, so a human attached to the mirror can't land bytes in the middle of a multi-call agent command sequence (e.g. send a command in one tool call, its argument in a second).
+Pause an `rw`-mode mirror's forwarding, from the external tool to the serial port, for `connection_id`. This stops a human attached to the mirror from landing bytes in the middle of a multi-call agent command sequence. For example, the agent might send a command in one tool call and its argument in a second.
 
 ```json
 { "connection_id": "s1a2b3c4", "timeout_ms": 5000 }
 ```
 
-Depth-counted: nested `exclusive_begin` calls stack, and forwarding only actually resumes once every matching `exclusive_end` has been called. **Always auto-expires** after `timeout_ms` (clamped to `[100, 30000]`, default `5000`) even if `exclusive_end` is never called — a crashed or erroring sequence can never lock a human out of the mirror indefinitely. A no-op (still returns `ok: true`) if the connection has no `rw`-mode mirror — there's nothing to pause. Returns `{ "ok": true, "message": "...", "depth": 1, "applied_timeout_ms": 5000.0 }`.
+This call is depth-counted. Nested `exclusive_begin` calls stack, and forwarding resumes only once every matching `exclusive_end` call has run. **It always expires** after `timeout_ms` (clamped to `[100, 30000]`, default `5000`), even if you never call `exclusive_end`. This means a crashed or erroring sequence can never lock a human out of the mirror. If the connection has no `rw`-mode mirror, this call does nothing and still returns `ok: true`, since there is nothing to pause. Returns `{ "ok": true, "message": "...", "depth": 1, "applied_timeout_ms": 5000.0 }`.
 
 ### paced.exclusive_end
 
@@ -470,4 +470,4 @@ Resume forwarding paused by `paced.exclusive_begin`.
 { "connection_id": "s1a2b3c4" }
 ```
 
-Decrements the nesting depth by one; forwarding only resumes once depth reaches zero. Safe to call even if nothing is currently paused (no-op). Returns `{ "ok": true, "message": "...", "depth": 0 }`.
+This decrements the nesting depth by one. Forwarding resumes only once the depth reaches zero. It is safe to call even if nothing is paused; in that case it does nothing. Returns `{ "ok": true, "message": "...", "depth": 0 }`.

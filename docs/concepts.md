@@ -1,14 +1,14 @@
 # Concepts
 
-How the Serial MCP server works, and how the pieces fit together.
+This page explains how the Serial MCP server works. It also explains how the pieces connect.
 
 ---
 
 ## How the agent interacts with devices
 
-The server gives an AI agent (like Claude) a set of serial tools over the MCP protocol. The agent uses these tools to talk to real hardware — listing ports, opening connections, sending commands, and reading responses.
+The server gives an AI agent, such as Claude, a set of serial tools over the MCP protocol. The agent uses these tools to talk to real hardware. It lists ports, opens connections, sends commands, and reads responses.
 
-Everything is **stateful**: connections persist across tool calls. The agent doesn't have to re-open the port between each operation.
+Everything is **stateful**. Connections stay open across tool calls. The agent does not need to reopen the port for each operation.
 
 ```
 ┌─────────────┐       stdio/MCP        ┌──────────────────┐      serial       ┌──────────┐
@@ -17,35 +17,35 @@ Everything is **stateful**: connections persist across tool calls. The agent doe
 └─────────────┘                        └──────────────────┘                   └──────────┘
 ```
 
-The agent sees tools like `serial.open`, `serial.write`, `serial.readline`. It calls them, gets structured JSON back, and reasons about what to do next.
+The agent sees tools such as `serial.open`, `serial.write`, and `serial.readline`. It calls a tool and gets structured JSON back. It uses this JSON to decide what to do next.
 
 ---
 
 ## Security model
 
-Plugins can execute arbitrary code, so they are opt-in:
+Plugins can run any code, so they are opt-in:
 
 | `SERIAL_MCP_PLUGINS` | Effect |
 |---|---|
-| *(unset)* | Plugins disabled — no loading, no discovery |
-| `all` | All plugins in `.serial_mcp/plugins/` are loaded |
-| `name1,name2` | Only named plugins are loaded |
+| *(unset)* | Plugins are off. The server does not load or find any plugin. |
+| `all` | The server loads all plugins in `.serial_mcp/plugins/`. |
+| `name1,name2` | The server loads only the named plugins. |
 
-The agent cannot bypass these flags. It can only use the tools the server exposes, and the server enforces the policy.
+The agent cannot bypass these flags. It can use only the tools the server exposes. The server enforces the policy.
 
-Path containment is enforced for all filesystem operations:
-- **Plugins** must be inside `.serial_mcp/plugins/`
-- **Specs** must be inside the project directory (parent of `.serial_mcp/`)
-- **Traces** always write to `.serial_mcp/traces/trace.jsonl` (not configurable)
+The server enforces path containment for all file operations:
+- **Plugins.** Must be inside `.serial_mcp/plugins/`.
+- **Specs.** Must be inside the project directory, the parent of `.serial_mcp/`.
+- **Traces.** Always write to `.serial_mcp/traces/trace.jsonl`. You cannot change this path.
 
-The agent is not a trusted principal — the server enforces all safety boundaries regardless of what the agent “wants” to do.
+The agent is not a trusted principal. The server enforces every safety boundary, even when the agent tries to bypass it.
 
 
 ---
 
-## Protocol specs — teaching the agent about your device
+## Protocol specs: teaching the agent about your device
 
-Specs are markdown files that describe a serial device's protocol: connection settings, message format, commands, and multi-step flows.
+Specs are markdown files. They describe a serial device's protocol: connection settings, message format, commands, and multi-step flows.
 
 ```
 .serial_mcp/
@@ -53,7 +53,7 @@ Specs are markdown files that describe a serial device's protocol: connection se
     my-device.md      # protocol documentation
 ```
 
-The agent reads specs to understand what a device can do. Without a spec, the agent can still open a port and exchange data, but it won't know what commands to send or what responses mean.
+The agent reads specs to learn what a device can do. Without a spec, the agent can still open a port and exchange data. But it will not know what commands to send or what the responses mean.
 
 ### How specs help the agent
 
@@ -68,25 +68,25 @@ Without spec:                         With spec:
 
 ### Creating a spec
 
-Tell the agent about your device's protocol — paste a datasheet, a link to docs, or just describe the commands in chat. The agent will create the spec file, register it, and use it in future sessions.
+Tell the agent about your device's protocol. You can paste a datasheet, give a link to the docs, or describe the commands in chat. The agent creates the spec file, registers it, and uses it in future sessions.
 
-You can also write specs by hand. They're just markdown files with a small YAML header.
+You can also write specs by hand. They are markdown files with a small YAML header.
 
 ### How the agent uses specs
 
-After opening a connection, the agent can check for registered specs, attach a matching one, and reference it throughout the session — looking up commands, expected responses, and multi-step flows as needed.
+After the agent opens a connection, it can check for registered specs. It can attach a matching spec and use it through the session. It looks up commands, expected responses, and multi-step flows as needed.
 
-Specs are freeform markdown. The agent reads and reasons about them — there's no rigid schema to fight, so specs can evolve naturally with your protocol.
+Specs are freeform markdown. The agent reads them and reasons about their content. There is no fixed schema to follow, so specs can change and grow along with your protocol.
 
 ### Beyond the agent
 
-Specs aren't just for the agent — they're structured protocol documentation that lives in your repo. If you're designing a new serial protocol, specs created during agent sessions become the foundation for official protocol docs. They capture what was discovered, tested, and verified through real device interaction.
+Specs are not only for the agent. They are structured protocol documentation that lives in your repository. If you design a new serial protocol, specs from agent sessions can become the base for official protocol docs. They record what the agent found, tested, and verified through real device interaction.
 
 ---
 
-## Plugins — giving the agent shortcut tools
+## Plugins: giving the agent shortcut tools
 
-Plugins add device-specific tools to the server. Instead of the agent manually composing write/read sequences, a plugin provides high-level operations like `gps.get_position` or `sensor.read_temp`.
+Plugins add device-specific tools to the server. Instead of building write and read sequences by hand, the agent calls a plugin. A plugin gives high-level actions, such as `gps.get_position` or `sensor.read_temp`.
 
 ```
 .serial_mcp/
@@ -105,7 +105,7 @@ META = {...}        # Optional: matching hints (device name patterns, descriptio
 
 ### How the agent uses plugins
 
-After opening a connection, the agent checks `serial.plugin.list`. Each plugin includes metadata that helps the agent decide if it fits:
+After the agent opens a connection, it checks `serial.plugin.list`. Each plugin has metadata. This metadata helps the agent decide if the plugin fits the device:
 
 ```json
 {
@@ -120,13 +120,13 @@ After opening a connection, the agent checks `serial.plugin.list`. Each plugin i
 
 ### AI-authored plugins
 
-The agent can also **create** plugins. Using `serial.plugin.template`, it generates a skeleton, fills in the implementation based on the device spec, and saves it to `.serial_mcp/plugins/`. After a server restart (or hot-reload), the new tools are available. Review generated plugins before enabling them in sensitive environments.
+The agent can also **create** plugins. It uses `serial.plugin.template` to generate a skeleton. It fills in the code based on the device spec and saves the file to `.serial_mcp/plugins/`. After a server restart, or a hot-reload, the new tools become available. Review generated plugins before you enable them in sensitive environments.
 
-This is the core loop: the agent explores a device, writes a plugin for it, and future sessions get shortcut tools.
+This is the core loop. The agent explores a device and writes a plugin for it. Future sessions then get shortcut tools.
 
 ### Beyond the agent
 
-Plugin code runs with the same privileges as the MCP server process. It can serve as a starting point for standalone test scripts, CLI tools, or production libraries. The agent writes the first draft based on the device spec, and you refine it into whatever you need.
+Plugin code runs with the same privileges as the MCP server process. You can use it as a starting point for standalone test scripts, CLI tools, or production libraries. The agent writes the first draft based on the device spec. You then refine it into what you need.
 
 ---
 
@@ -139,7 +139,7 @@ Specs and plugins serve different roles:
 | **What** | Documentation | Code |
 | **Purpose** | Teach the agent what the device can do | Give the agent shortcut tools |
 | **Format** | Freeform markdown | Python module |
-| **Required?** | No — agent can still explore with raw tools | No — agent can use raw serial tools |
+| **Required?** | No. The agent can still explore with raw tools. | No. The agent can use raw serial tools. |
 | **Bound to** | A connection (via `serial.spec.attach`) | Global (all connections) |
 
 They work together:
@@ -159,19 +159,19 @@ They work together:
                     └──────────────────┘
 ```
 
-A plugin doesn't require a spec, and a spec doesn't require a plugin. But when both exist for a device, the agent gets the best of both: deep protocol knowledge from the spec, and fast operations from the plugin.
+A plugin does not need a spec. A spec does not need a plugin. But when both exist for a device, the agent gets the best of both: deep protocol knowledge from the spec, and fast actions from the plugin.
 
 ---
 
-## Mirror — watch or share a connection with an external tool
+## Mirror: watch or share a connection with an external tool
 
 When the MCP server opens a serial port, it has exclusive access. No other tool can read from it. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
 
-Two transports are available: PTY (a virtual serial device file) and TCP (a plain network socket). Pick with `SERIAL_MCP_MIRROR_TRANSPORT`.
+There are two transports: PTY, a virtual serial device file, and TCP, a plain network socket. Choose one with `SERIAL_MCP_MIRROR_TRANSPORT`.
 
 ### Architecture
 
-Every open connection has a background reader thread and a thread-safe buffer. All reads go through the buffer, whether or not mirroring is enabled.
+Every open connection has a background reader thread and a thread-safe buffer. All reads go through this buffer, whether mirroring is on or off.
 
 ```
 Always (all platforms):
@@ -194,18 +194,18 @@ Mirror on, TCP transport (all platforms):
 | Mode | Data flow |
 |---|---|
 | `off` | No mirror. Serial data goes to the buffer only. |
-| `ro` | Serial data is teed to both the buffer and the mirror. The external tool can observe but not write. |
-| `rw` | Same as `ro`, plus data the external tool sends is forwarded to the real serial port. A write lock prevents interleaving between MCP writes and mirror writes. |
+| `ro` | The server copies serial data to both the buffer and the mirror. The external tool can read the data but cannot write to the device. |
+| `rw` | This mode does everything `ro` does. It also forwards data from the external tool to the real serial port. A write lock stops MCP writes and mirror writes from mixing together. |
 
 ### Choosing a transport
 
 | | PTY | TCP |
 |---|---|---|
 | **Platforms** | macOS/Linux only | All platforms, including Windows |
-| **Why the difference** | Needs `os.openpty()`, which has no Windows equivalent — Windows has no virtual COM port mechanism the server can create on its own | A plain socket. Works the same everywhere. |
+| **Why the difference** | PTY needs `os.openpty()`. Windows has no equivalent function and no way to create a virtual COM port on its own. | A plain socket. It works the same on every platform. |
 | **Client sees** | A real device file (`/dev/ttys004`, or a stable symlink like `/tmp/serial-mcp0`) | A `host:port` to connect to (telnet, or any raw TCP client) |
-| **Reconnecting** | The client owns one PTY for the life of the mirror. If it drops, most terminal apps won't notice the device came back and don't retry on their own. | Each new connection replaces the previous one. A simple poll-and-reconnect script (e.g. one that retries `connect()` until the port answers) gets a clean, working mirror every time, with no special handling needed. |
-| **Use when** | An external tool specifically needs a device file (`screen`, `minicom`) | Anything else — including watching a device from a different machine, or wanting a reconnect-friendly setup |
+| **Reconnecting** | The client owns one PTY for the life of the mirror. If the mirror drops, most terminal apps do not notice when the device returns. They do not retry on their own. | Each new connection replaces the previous one. A simple poll-and-reconnect script, for example one that retries `connect()` until the port answers, gets a clean, working mirror every time. It needs no special handling. |
+| **Use when** | An external tool needs a device file, for example `screen` or `minicom`. | Anything else. This includes watching a device from a different machine, or when you want a setup that reconnects easily. |
 
 ### Configuration
 
@@ -221,23 +221,23 @@ SERIAL_MCP_MIRROR_TCP_HOST=127.0.0.1      # bind address (default: loopback only
 SERIAL_MCP_MIRROR_TCP_PORT=2424           # bind port (default: 2424; set to 0 for an OS-picked ephemeral port)
 ```
 
-Each connection gets its own mirror. For PTY, that means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on — override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, a fixed port only fits one bound socket, so only one connection at a time can hold it — mirroring a second simultaneous connection needs a different port, or `SERIAL_MCP_MIRROR_TCP_PORT=0` so the OS picks a free one for each. Either way, `serial.open`'s response (and `serial.connection_status`) reports the actual bound host and port under `mirror.tcp_host`/`mirror.tcp_port`.
+Each connection gets its own mirror. For PTY, this means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on. Override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, a fixed port fits only one bound socket, so only one connection can hold it at a time. To mirror a second connection at the same time, use a different port, or set `SERIAL_MCP_MIRROR_TCP_PORT=0` so the OS picks a free port for each connection. Either way, `serial.open`'s response, and `serial.connection_status`, report the actual bound host and port under `mirror.tcp_host` and `mirror.tcp_port`.
 
 ### Platform
 
-PTY mirroring requires macOS or Linux. If `SERIAL_MCP_MIRROR_TRANSPORT=pty` is set on Windows, the server logs a warning and disables the mirror — the buffer and background reader still work normally. **TCP mirroring works on Windows too** — if you need mirroring there, use `SERIAL_MCP_MIRROR_TRANSPORT=tcp`.
+PTY mirroring needs macOS or Linux. If you set `SERIAL_MCP_MIRROR_TRANSPORT=pty` on Windows, the server logs a warning and turns off the mirror. The buffer and background reader still work normally. **TCP mirroring works on Windows too.** If you need mirroring on Windows, use `SERIAL_MCP_MIRROR_TRANSPORT=tcp`.
 
 ### When to use each mode
 
-- **`off`** — default. Use when the MCP server is the only thing talking to the device.
-- **`ro`** — use when you want to monitor traffic in another terminal (e.g. `screen`, `minicom`, a logic analyzer, or plain `telnet` for the TCP transport) while the agent drives the device.
-- **`rw`** — use when you need bidirectional access from both the agent and an external tool simultaneously. Be aware that both can write to the device, so coordinate accordingly — `paced.exclusive_begin`/`paced.exclusive_end` (see Paced Writes in the tools reference) can pause the external tool's writes for the duration of a multi-call agent sequence, without giving up `rw` the rest of the time.
+- **`off`.** The default. Use this when the MCP server is the only tool that talks to the device.
+- **`ro`.** Use this when you want to watch traffic in another terminal, for example `screen`, `minicom`, a logic analyzer, or plain `telnet` for the TCP transport, while the agent drives the device.
+- **`rw`.** Use this when you need two-way access from both the agent and an external tool at the same time. Both can write to the device, so plan for this. `paced.exclusive_begin` and `paced.exclusive_end` (see Paced Writes in the tools reference) can pause the external tool's writes during a multi-call agent sequence, without giving up `rw` mode the rest of the time.
 
 ---
 
 ## The agent's decision flow
 
-After opening a connection, the agent follows this flow:
+After the agent opens a connection, it follows this flow:
 
 ```
 Open serial port

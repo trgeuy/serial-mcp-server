@@ -12,7 +12,7 @@ connection:
 
 # DemoDevice Protocol
 
-Simulated serial device for testing the Serial MCP server.
+This is a simulated serial device for testing the Serial MCP server.
 
 ## Connection
 
@@ -28,7 +28,7 @@ Simulated serial device for testing the Serial MCP server.
 - Responses are one or more lines, each terminated with `\r\n`.
 - After every response, the device prints the prompt `> ` (greater-than followed by a space).
 - The prompt indicates the device is ready for the next command.
-- Prefixed lines (`[LOG]`, `[SAMPLE]`, `[BOOT]`) are asynchronous output — they may appear between the prompt and the next command.
+- Prefixed lines (`[LOG]`, `[SAMPLE]`, `[BOOT]`) are asynchronous output. They can appear between the prompt and the next command.
 
 ## Boot sequence
 
@@ -89,7 +89,7 @@ pong
 
 ### echo \<text\>
 
-Echo text back verbatim. Useful for testing write + readline.
+Echo text back exactly. Use this to test write and readline.
 
 ```
 > echo Hello world
@@ -143,7 +143,7 @@ Valid keys and ranges:
 
 ### log start [interval_ms]
 
-Start periodic log output. Optionally set the interval (overrides `log_interval_ms` config).
+Start periodic log output. You can set the interval. This overrides the `log_interval_ms` config value.
 
 ```
 > log start
@@ -157,7 +157,7 @@ Log lines have the format:
 [LOG] HH:MM:SS temp=<float> humidity=<float> pressure=<float>
 ```
 
-Log lines are emitted asynchronously — they appear even while the device is waiting for commands. The prompt is still valid; just send a command and the device will respond.
+The device emits log lines asynchronously. They can appear even while the device waits for a command. The prompt is still valid. Send a command, and the device responds.
 
 ### log stop
 
@@ -183,11 +183,11 @@ OK sampling 3 at 10Hz
 >
 ```
 
-Use `read_until` with delimiter `DONE` to collect all samples in one call. The sample rate is controlled by `config set sample_rate_hz`. Count must be 1–1000.
+Use `read_until` with delimiter `DONE` to collect all samples in one call. `config set sample_rate_hz` controls the sample rate. Count must be 1–1000.
 
 ### auth \<password\>
 
-Authenticate the session. Required for `secret` and `factory-reset`.
+Authenticate the session. You need this for `secret` and `factory-reset`.
 
 ```
 > auth demo1234
@@ -201,7 +201,7 @@ The password is `demo1234`.
 
 ### secret
 
-Read a secret value. Requires authentication.
+Read a secret value. This needs authentication.
 
 ```
 > secret
@@ -215,7 +215,7 @@ The answer is 42.
 
 ### factory-reset
 
-Reset the device to defaults. Requires authentication. Resets config, clears auth, stops logging/sampling, and reboots.
+Reset the device to its defaults. This needs authentication. It resets the config, clears authentication, stops logging and sampling, and reboots the device.
 
 ```
 > factory-reset
@@ -227,7 +227,7 @@ OK factory reset
 
 ### reboot
 
-Reboot the device. Stops all activity, pauses ~1 second, then prints the boot banner.
+Reboot the device. This stops all activity, pauses for about 1 second, then prints the boot banner.
 
 ```
 > reboot
