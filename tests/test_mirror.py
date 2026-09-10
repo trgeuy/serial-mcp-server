@@ -206,6 +206,19 @@ class TestReaderThread:
         assert hasattr(reader, "write_lock")
         assert isinstance(reader.write_lock, type(threading.Lock()))
 
+    def test_pause_resume_are_noops(self):
+        """Base ReaderThread has nothing to forward, so these must be safe no-ops."""
+        buf = SerialBuffer()
+        ser = MagicMock()
+        reader = ReaderThread(ser, buf)
+        assert reader.is_forwarding_paused is False
+        assert reader.pause_depth == 0
+        applied = reader.pause_forwarding(timeout_ms=1000)
+        assert applied == 0.0
+        assert reader.is_forwarding_paused is False
+        assert reader.pause_depth == 0
+        reader.resume_forwarding()  # must not raise
+
 
 # ---------------------------------------------------------------------------
 # MirrorSession (Unix only)
@@ -274,6 +287,147 @@ class TestMirrorSession:
         mirror.stop()
         # PTY fds are closed, no error expected
         assert not mirror.alive
+
+
+@pytest.mark.skipif(not _IS_UNIX, reason="PTY mirror requires Unix")
+class TestExclusiveForwarding:
+    """paced.exclusive_begin/end's underlying mechanism: pause/resume on MirrorSession."""
+
+    def _make_rw_mirror(self) -> MirrorSession:
+        """MirrorSession with a mock ``ser`` that has a real, never-readable fd.
+
+        ``_run()`` calls ``select.select`` on ``ser.fileno()`` directly, which a
+        bare MagicMock can't satisfy (non-integer). A pipe's read end, with the
+        write end held open and never written to, is a real fd that select()
+        will never report as readable -- so the ser_fd branch simply never
+        fires, leaving these tests free to exercise only the PTY-forwarding
+        branch under test.
+        """
+        ser = MagicMock()
+        ser.baudrate = 115200
+        pipe_r, pipe_w = os.pipe()
+        ser.fileno.return_value = pipe_r
+        buf = SerialBuffer()
+        mirror = MirrorSession(ser, buf, mode="rw")
+        mirror._test_ser_pipe = (pipe_r, pipe_w)  # closed by _stop_and_close_pipe
+        return mirror
+
+    def _stop_and_close_pipe(self, mirror: MirrorSession) -> None:
+        mirror.stop()
+        for fd in getattr(mirror, "_test_ser_pipe", ()):
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def test_not_paused_by_default(self):
+        mirror = self._make_rw_mirror()
+        try:
+            assert mirror.is_forwarding_paused is False
+            assert mirror.mirror_info()["forwarding_paused"] is False
+            assert mirror.mirror_info()["dropped_while_paused"] == 0
+        finally:
+            mirror.stop()
+
+    def test_pause_forwarding_reports_paused(self):
+        mirror = self._make_rw_mirror()
+        try:
+            mirror.pause_forwarding(timeout_ms=1000)
+            assert mirror.is_forwarding_paused is True
+            assert mirror.mirror_info()["forwarding_paused"] is True
+        finally:
+            mirror.stop()
+
+    def test_depth_counting_nested_pause(self):
+        mirror = self._make_rw_mirror()
+        try:
+            assert mirror.pause_depth == 0
+            mirror.pause_forwarding(timeout_ms=1000)
+            assert mirror.pause_depth == 1
+            mirror.pause_forwarding(timeout_ms=1000)
+            assert mirror.pause_depth == 2
+            mirror.resume_forwarding()
+            assert mirror.pause_depth == 1
+            assert mirror.is_forwarding_paused is True  # outer pause still active
+            mirror.resume_forwarding()
+            assert mirror.pause_depth == 0
+            assert mirror.is_forwarding_paused is False
+        finally:
+            mirror.stop()
+
+    def test_resume_without_pause_is_safe_noop(self):
+        mirror = self._make_rw_mirror()
+        try:
+            mirror.resume_forwarding()  # must not raise or go negative
+            assert mirror.is_forwarding_paused is False
+            mirror.resume_forwarding()
+            assert mirror.is_forwarding_paused is False
+        finally:
+            mirror.stop()
+
+    def test_timeout_is_clamped(self):
+        mirror = self._make_rw_mirror()
+        try:
+            assert mirror.pause_forwarding(timeout_ms=100_000) == 30_000  # clamped to max
+            mirror.resume_forwarding()
+            assert mirror.pause_forwarding(timeout_ms=1) == 100  # clamped to min
+            mirror.resume_forwarding()
+            assert mirror.pause_forwarding(timeout_ms=None) == 5_000  # default
+            mirror.resume_forwarding()
+        finally:
+            mirror.stop()
+
+    def test_paused_forwarding_drops_bytes_and_counts_them(self):
+        mirror = self._make_rw_mirror()
+        try:
+            mirror.start()
+            mirror.pause_forwarding(timeout_ms=5_000)
+            os.write(mirror._slave_fd, b"human typed this")
+            time.sleep(0.2)
+            mirror.ser.write.assert_not_called()
+            assert mirror.dropped_while_paused == len(b"human typed this")
+        finally:
+            self._stop_and_close_pipe(mirror)
+
+    def test_resumed_forwarding_writes_to_serial(self):
+        mirror = self._make_rw_mirror()
+        try:
+            mirror.start()
+            mirror.pause_forwarding(timeout_ms=5_000)
+            mirror.resume_forwarding()
+            os.write(mirror._slave_fd, b"AT+VERSION\r")
+            time.sleep(0.2)
+            mirror.ser.write.assert_called_once_with(b"AT+VERSION\r")
+        finally:
+            self._stop_and_close_pipe(mirror)
+
+    def test_pause_auto_expires_without_explicit_resume(self):
+        """A caller that never resumes must not lock out the human forever."""
+        mirror = self._make_rw_mirror()
+        try:
+            mirror.start()
+            mirror.pause_forwarding(timeout_ms=100)  # minimum allowed
+            assert mirror.is_forwarding_paused is True
+            # Loop checks the deadline once per ~0.05s iteration; give it margin.
+            time.sleep(0.35)
+            assert mirror.is_forwarding_paused is False
+            os.write(mirror._slave_fd, b"still here\r")
+            time.sleep(0.2)
+            mirror.ser.write.assert_called_once_with(b"still here\r")
+        finally:
+            self._stop_and_close_pipe(mirror)
+
+    def test_ro_mode_pause_state_is_inert(self):
+        """Pausing in ro mode is harmless -- nothing forwards there anyway."""
+        ser = MagicMock()
+        ser.baudrate = 115200
+        buf = SerialBuffer()
+        mirror = MirrorSession(ser, buf, mode="ro")
+        try:
+            mirror.pause_forwarding(timeout_ms=1000)
+            assert mirror.is_forwarding_paused is True
+        finally:
+            mirror.stop()
 
 
 # ---------------------------------------------------------------------------

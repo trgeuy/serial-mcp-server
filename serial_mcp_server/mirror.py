@@ -172,10 +172,36 @@ class ReaderThread:
         """Return mirror metadata, or None if this is a plain reader."""
         return None
 
+    # -- Exclusive-forwarding controls -------------------------------------
+    # No-op stubs so callers never need an isinstance(MirrorSession) check.
+    # Only MirrorSession's rw mode ever forwards anything to serial.
+
+    def pause_forwarding(self, timeout_ms: float | None = None) -> float:
+        """Pause PTY/socket-to-serial forwarding. Returns the applied timeout in ms."""
+        return 0.0
+
+    def resume_forwarding(self) -> None:
+        """Resume forwarding. Safe to call even if not paused (no-op)."""
+        return None
+
+    @property
+    def is_forwarding_paused(self) -> bool:
+        return False
+
+    @property
+    def pause_depth(self) -> int:
+        return 0
+
 
 # ---------------------------------------------------------------------------
 # MirrorSession — PTY tee on top of ReaderThread (Unix only)
 # ---------------------------------------------------------------------------
+
+# Exclusive-pause bounds. A pause always auto-expires — a crashed or
+# erroring caller must never lock out a human attached to the mirror.
+_EXCLUSIVE_DEFAULT_MS = 5_000
+_EXCLUSIVE_MAX_MS = 30_000
+_EXCLUSIVE_MIN_MS = 100
 
 
 class MirrorSession(ReaderThread):
@@ -195,6 +221,13 @@ class MirrorSession(ReaderThread):
         super().__init__(ser, buffer)
         self.mode = mode  # "ro" or "rw"
         self.link_path = link_path
+
+        # Exclusive-forwarding pause state (rw mode only; harmless if unused
+        # in ro mode, since nothing forwards there either way).
+        self._pause_lock = threading.Lock()
+        self._pause_depth = 0
+        self._pause_deadline: float | None = None
+        self.dropped_while_paused = 0
 
         # Create PTY pair.
         self._master_fd, self._slave_fd = os.openpty()
@@ -250,11 +283,65 @@ class MirrorSession(ReaderThread):
             _release_mirror_index(self._mirror_index)
             self._mirror_index = None
 
+    def pause_forwarding(self, timeout_ms: float | None = None) -> float:
+        """Pause PTY-to-serial forwarding (rw mode only).
+
+        Depth-counted so nested begin/end pairs compose safely. Always
+        auto-expires: a caller that never resumes (crash, error, forgotten
+        call) cannot lock out a human attached to the mirror for longer
+        than *timeout_ms* (clamped to [100, 30000], default 5000).
+        """
+        if timeout_ms is None:
+            timeout_ms = _EXCLUSIVE_DEFAULT_MS
+        timeout_ms = max(_EXCLUSIVE_MIN_MS, min(float(timeout_ms), _EXCLUSIVE_MAX_MS))
+        with self._pause_lock:
+            self._pause_depth += 1
+            self._pause_deadline = time.monotonic() + timeout_ms / 1000.0
+        return timeout_ms
+
+    def resume_forwarding(self) -> None:
+        """Resume forwarding. Safe to call even if not paused (no-op)."""
+        with self._pause_lock:
+            if self._pause_depth > 0:
+                self._pause_depth -= 1
+            if self._pause_depth == 0:
+                self._pause_deadline = None
+
+    @property
+    def is_forwarding_paused(self) -> bool:
+        with self._pause_lock:
+            return self._pause_depth > 0
+
+    @property
+    def pause_depth(self) -> int:
+        with self._pause_lock:
+            return self._pause_depth
+
+    def _check_pause_expired(self) -> None:
+        """Force-clear an expired pause. Called from the reader loop only."""
+        with self._pause_lock:
+            if (
+                self._pause_depth > 0
+                and self._pause_deadline is not None
+                and time.monotonic() > self._pause_deadline
+            ):
+                logger.warning(
+                    "Exclusive forwarding pause on %s expired without resume_forwarding() "
+                    "being called (depth was %d) -- auto-resuming.",
+                    self.ser.port,
+                    self._pause_depth,
+                )
+                self._pause_depth = 0
+                self._pause_deadline = None
+
     def _run(self) -> None:
         ser_fd = self.ser.fileno()
         read_fds = [ser_fd, self._master_fd] if self.mode == "rw" else [ser_fd]
 
         while not self._stop.is_set():
+            if self.mode == "rw":
+                self._check_pause_expired()
+
             try:
                 readable, _, _ = select.select(read_fds, [], [], 0.05)
             except (OSError, ValueError):
@@ -278,9 +365,13 @@ class MirrorSession(ReaderThread):
                 elif fd == self._master_fd:
                     try:
                         pty_data = os.read(self._master_fd, 4096)
-                        if pty_data:
-                            with self.write_lock:
-                                self.ser.write(pty_data)
+                        if not pty_data:
+                            continue
+                        if self.is_forwarding_paused:
+                            self.dropped_while_paused += len(pty_data)
+                            continue
+                        with self.write_lock:
+                            self.ser.write(pty_data)
                     except OSError:
                         pass  # PTY client disconnected.
 
@@ -297,6 +388,8 @@ class MirrorSession(ReaderThread):
             "pty_path": self.pty_slave_path,
             "link": self.link_path,
             "mode": self.mode,
+            "forwarding_paused": self.is_forwarding_paused,
+            "dropped_while_paused": self.dropped_while_paused,
         }
 
 
