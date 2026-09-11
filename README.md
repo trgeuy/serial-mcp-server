@@ -58,8 +58,11 @@ The agent calls these tools and gets structured JSON back. It reasons about what
 
 ```bash
 pip install git+https://github.com/trgeuy/serial-mcp-server.git
+```
 
-# Register the MCP server with Claude Code
+Register the MCP server with Claude Code:
+
+```bash
 claude mcp add serial -- serial_mcp
 ```
 
@@ -98,11 +101,15 @@ Start with raw serial tools. Move up the stack as you understand your device pro
 
 ## Install (development)
 
-```bash
-# Editable install from repo root
-pip install -e .
+Editable install from repo root:
 
-# Or with uv
+```bash
+pip install -e .
+```
+
+Or with uv:
+
+```bash
 uv pip install -e .
 ```
 
@@ -261,41 +268,75 @@ Use `serial.trace.status` to check the configuration and event count. Use `seria
 
 When the MCP server owns a serial port, most OSes prevent any other process from opening it. Mirroring creates a second, external-facing copy of the same byte stream. Other tools, such as `screen`, `minicom`, logic analyzers, telnet, and custom scripts, can connect to this copy at the same time.
 
-There are two transports. Pick one with `SERIAL_MCP_MIRROR_TRANSPORT`:
+There are two transports. Pick one with `SERIAL_MCP_MIRROR_TRANSPORT`. See [docs/concepts.md](docs/concepts.md#mirror-watch-or-share-a-connection-with-an-external-tool) for the full architecture and a transport comparison table.
+
+### PTY transport (default, macOS/Linux only)
+
+A virtual device file. Any tool that expects a real serial device, such as `screen` or `minicom`, can open it directly.
 
 ```bash
-# PTY transport (default) — a virtual device file, macOS/Linux only
 claude mcp add serial \
   -e SERIAL_MCP_MIRROR=ro \
   -- serial_mcp
+```
 
-# After opening a connection, the response includes the mirror path:
-# { "mirror": { "transport": "pty", "pty_path": "/dev/ttys004", "link": "/tmp/serial-mcp0", "mode": "ro" } }
+After opening a connection, the response includes the mirror path:
 
-# In another terminal:
+```json
+{ "mirror": { "transport": "pty", "pty_path": "/dev/ttys004", "link": "/tmp/serial-mcp0", "mode": "ro" } }
+```
+
+In another terminal, connect with the symlink path:
+
+```bash
 screen /tmp/serial-mcp0 115200
 ```
 
+### TCP transport (every platform, including Windows)
+
+A plain network socket instead of a device file. Use this on Windows, since Windows has no PTY equivalent.
+
 ```bash
-# TCP transport — a plain socket, works on every platform including Windows
 claude mcp add serial \
   -e SERIAL_MCP_MIRROR=ro \
   -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
   -- serial_mcp
+```
 
-# The response reports the actual bound host/port. Defaults to a fixed 2424
-# so client scripts can hardcode it; set SERIAL_MCP_MIRROR_TCP_PORT=0 to let
-# the OS pick an ephemeral one instead (needed if you mirror more than one
-# connection at once, since a fixed port only fits one bound socket):
-# { "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 2424, "mode": "ro" } }
+The response reports the actual bound host and port:
 
-# In another terminal:
+```json
+{ "mirror": { "transport": "tcp", "tcp_host": "127.0.0.1", "tcp_port": 2424, "mode": "ro" } }
+```
+
+It defaults to a fixed port, `2424`, so client scripts can hardcode it. If you mirror more than one connection at once, a fixed port will not work — only one connection can bind it at a time. Set `SERIAL_MCP_MIRROR_TCP_PORT=0` instead, so the OS picks a free port per connection, and read the actual port back from each connection's response.
+
+In another terminal:
+
+```bash
 telnet 127.0.0.1 2424
 ```
 
-`examples/telnet-watch/` includes `telnet-watch.sh`, a poll-and-reconnect wrapper for this transport. Point it at a host and port, or at a named shortcut you define. It stays attached and reconnects automatically whenever the mirror drops.
+### Watching with `telnet-watch.sh`
 
-**Telnet double-echo.** A real telnet client normally echoes what you type in its own window. The device on the other end often echoes the same keystrokes back too. Without any negotiation, you see each character twice. Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix this: the server tells the client it will handle echoing, and the client's local echo turns off. This setting also strips telnet's own protocol bytes out of the mirrored stream so they never reach the serial device. Turn it on only for real telnet clients — a plain socket tool like `nc` does not expect this and does not need it.
+Plain `telnet` works, but it does not reconnect: if the mirror drops (a server restart, or a new connection cycling in) you have to notice and reconnect by hand. `examples/telnet-watch/telnet-watch.sh` wraps `telnet` with a poll-and-reconnect loop, so it's meant for longer working sessions where you'd rather leave a terminal watching than babysit it.
+
+Point it at a raw host and port, or at a named shortcut from its editable `case` statement — the script ships with a `serial` shortcut for this server's default mirror port:
+
+```bash
+./examples/telnet-watch/telnet-watch.sh serial          # shortcut for localhost:2424
+./examples/telnet-watch/telnet-watch.sh 127.0.0.1 2424  # equivalent, spelled out
+```
+
+See [examples/telnet-watch/README.md](examples/telnet-watch/README.md) for the full quick start, including the `SERIAL_MCP_MIRROR_TCP_PORT=0` case, and how it tells a deliberate quit apart from a dropped connection.
+
+Since this script always connects with a real `telnet` binary, you will usually also want `SERIAL_MCP_MIRROR_TCP_TELNET=1` on the server — see the next section.
+
+### Telnet double-echo
+
+A real telnet client echoes what you type in its own window. The device on the other end often echoes the same keystrokes back too. Without any negotiation, you see each character twice.
+
+Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix this: the server tells the client it will handle echoing, so the client's local echo turns off. This also strips telnet's own protocol bytes out of the mirrored stream so they never reach the serial device. Turn it on only for real telnet clients — a plain socket tool like `nc` does not expect these bytes and does not need it.
 
 ```bash
 claude mcp add serial \
@@ -305,13 +346,19 @@ claude mcp add serial \
   -- serial_mcp
 ```
 
+### Modes
+
 | Mode | Behavior |
 |---|---|
 | `off` | No mirror (default). Only the MCP server can access the port. |
 | `ro` | External tools see all serial data but cannot write to the device. |
 | `rw` | External tools can both see data and write to the device. |
 
-**Platform:** the PTY transport needs `os.openpty()`. macOS and Linux have this function; Windows does not. Windows has no way to create a virtual COM port on its own. If you set `SERIAL_MCP_MIRROR_TRANSPORT=pty` on Windows anyway, the server logs a warning and turns off the mirror. **The TCP transport works everywhere, Windows included.** Use it if you need mirroring on Windows. TCP also handles a dropped and reconnected client better: a new connection simply replaces the old one. A plain poll-and-reconnect script gets a clean mirror every time, with nothing special to handle on the client side.
+### Platform notes
+
+The PTY transport needs `os.openpty()`. macOS and Linux have this function; Windows does not, and has no way to create a virtual COM port on its own. If you set `SERIAL_MCP_MIRROR_TRANSPORT=pty` on Windows anyway, the server logs a warning and turns off the mirror.
+
+**The TCP transport works everywhere, Windows included.** Use it if you need mirroring on Windows. It also handles a dropped and reconnected client better than PTY: a new connection simply replaces the old one, so a plain poll-and-reconnect script gets a clean mirror every time, with nothing special to handle on the client side.
 
 ---
 

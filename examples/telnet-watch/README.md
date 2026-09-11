@@ -2,7 +2,7 @@
 
 This is a small poll-and-reconnect wrapper around `telnet`. It is written for the TCP mirror transport (`SERIAL_MCP_MIRROR_TRANSPORT=tcp`; see the Mirror section in [docs/concepts.md](../../docs/concepts.md)). Point it at the mirror's `host` and `port`. It then stays attached for as long as you want to watch, and it reconnects on its own whenever the mirror drops. A mirror can drop for two reasons: the server restarts, or a new connection cycles in. Either way, the script recovers, because the TCP transport always replaces the old client instead of refusing the new one.
 
-The polling and reconnect logic is not specific to this project. It works with any plain TCP service you would normally point `telnet` at. The script also has an editable `case` statement for named shortcuts. For example, `./telnet-watch.sh serial` works instead of typing out `localhost 2424`. The script ships with one example pair, from a project that pairs this server with an Altair 8800 emulator called altairsim. Edit the `case` statement to match your own setup.
+The polling and reconnect logic is not specific to this project. It works with any plain TCP service you would normally point `telnet` at. The script also has an editable `case` statement for named shortcuts, so `./telnet-watch.sh serial` works instead of typing out `localhost 2424` — see [Named shortcuts](#named-shortcuts) below.
 
 ## Quick start
 
@@ -28,6 +28,17 @@ serial.open → { "port": "/dev/ttyUSB0", ... }
 ```
 
 You see the same byte stream the MCP server sees, live. If the connection drops for any reason, `telnet-watch.sh` notices and reattaches on its own. You do not need to re-run it or guess whether the port has come back.
+
+## Named shortcuts
+
+The `case` statement in the script ships with two examples, both hardcoded to `localhost` and specific to a project that pairs this server with a physical Altair 8800 replica:
+
+| Shortcut | Resolves to | What it watches |
+|---|---|---|
+| `serial` | `localhost:2424` | This server's own TCP mirror (`SERIAL_MCP_MIRROR_TCP_PORT`'s default) |
+| `altairsim` | `localhost:2323` | [`altairsim`](https://github.com/deltecent/altairsim)'s own `--mirror socket:2323` output — a separate Altair 8800 emulator, unrelated to this server |
+
+These are not read from an environment variable or config file — they are literal cases in the script. Edit the `case` statement in `telnet-watch.sh` to change what `serial` or `altairsim` point to, or to add shortcuts of your own.
 
 ## Double-echo
 
