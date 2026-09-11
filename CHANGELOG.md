@@ -7,9 +7,10 @@
 - TCP mirror transport (`SERIAL_MCP_MIRROR_TRANSPORT=tcp`, alongside the existing `pty` default): a plain socket, works on every platform including Windows (the PTY transport needs `os.openpty()`, which Windows has no equivalent for). A new client connection replaces any existing one rather than being refused, so a simple poll-and-reconnect script always gets a clean mirror. Configurable via `SERIAL_MCP_MIRROR_TCP_HOST`/`SERIAL_MCP_MIRROR_TCP_PORT` (default: loopback, fixed port `2424` — set to `0` for an OS-assigned ephemeral port, required if mirroring more than one connection at once).
 - `paced.*` tools, built in and opt-in via `SERIAL_MCP_PACED=1`: `paced.configure`, `paced.write`, `paced.calibrate`, `paced.sweep` (byte-paced writes and empirical gap tuning for UARTs that drop characters at full speed), plus `paced.exclusive_begin`/`paced.exclusive_end` (the pause/resume tools above, exposed at the tool level).
 - `examples/telnet-watch/`: a poll-and-reconnect wrapper around `telnet` for the TCP mirror transport, with an editable named-shortcut table for hardcoding your own host/port pairs.
+- `SERIAL_MCP_MIRROR_TCP_TELNET=1` (opt-in, default off): fixes double-echo in a real telnet client attached to the TCP mirror. Sends `IAC WILL ECHO`/`IAC WILL SUPPRESS-GO-AHEAD` on each new client connection, strips telnet command bytes (negotiation replies, subnegotiation blocks) out of the client's incoming stream before it can reach the serial port, and escapes a literal `0xFF` in outgoing device data as `IAC IAC` so a real telnet client's parser doesn't misread it. Off by default since a plain socket client (`nc`, test scripts) doesn't speak or need the telnet protocol.
 
 ### Changed
-- `mirror_info()` now reports `transport` (`"pty"` or `"tcp"`) on every mirrored connection, plus `forwarding_paused`/`dropped_while_paused`.
+- `mirror_info()` now reports `transport` (`"pty"` or `"tcp"`) on every mirrored connection, plus `forwarding_paused`/`dropped_while_paused`. TCP mirrors also report `telnet` (bool).
 
 ## 0.1.3
 

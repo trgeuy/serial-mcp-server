@@ -17,6 +17,7 @@ from serial_mcp_server.helpers import (
     MIRROR_PTY_LINK,
     MIRROR_TCP_HOST,
     MIRROR_TCP_PORT,
+    MIRROR_TCP_TELNET,
     MIRROR_TRANSPORT,
     _coerce_bool,
     _err,
@@ -501,6 +502,7 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
         mirror_transport=MIRROR_TRANSPORT,
         tcp_host=MIRROR_TCP_HOST,
         tcp_port=MIRROR_TCP_PORT,
+        tcp_telnet=MIRROR_TCP_TELNET,
     )
     reader.start()
 

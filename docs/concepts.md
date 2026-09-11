@@ -219,9 +219,23 @@ SERIAL_MCP_MIRROR_LINK=/tmp/serial-mcp    # symlink base path (default when mirr
 # TCP transport:
 SERIAL_MCP_MIRROR_TCP_HOST=127.0.0.1      # bind address (default: loopback only)
 SERIAL_MCP_MIRROR_TCP_PORT=2424           # bind port (default: 2424; set to 0 for an OS-picked ephemeral port)
+SERIAL_MCP_MIRROR_TCP_TELNET=0            # 0 (default) or 1: negotiate telnet echo handling
 ```
 
 Each connection gets its own mirror. For PTY, this means a numbered symlink: `/tmp/serial-mcp0`, `/tmp/serial-mcp1`, and so on. Override the base path with `SERIAL_MCP_MIRROR_LINK`. For TCP, a fixed port fits only one bound socket, so only one connection can hold it at a time. To mirror a second connection at the same time, use a different port, or set `SERIAL_MCP_MIRROR_TCP_PORT=0` so the OS picks a free port for each connection. Either way, `serial.open`'s response, and `serial.connection_status`, report the actual bound host and port under `mirror.tcp_host` and `mirror.tcp_port`.
+
+### Telnet double-echo
+
+A real telnet client echoes what you type in its own window. If the device on the other end echoes the same bytes back (most serial consoles do), you see each character twice. This has nothing to do with the mirror itself — it happens because the client does not know the server intends to handle echo.
+
+Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix it. On each new client connection, the server sends two standard telnet negotiation commands: `IAC WILL ECHO` and `IAC WILL SUPPRESS-GO-AHEAD` (RFC 854 and RFC 857). A real telnet client responds to `WILL ECHO` by turning off its own local echo, since the server is now saying it owns echo. The server does not need to inspect the client's reply — its own behavior does not change either way, so any negotiation reply from the client is simply recognized and dropped rather than forwarded to the serial device as garbage bytes.
+
+Two related pieces, both driven by the same setting:
+
+- **Outgoing device data**: if a byte value `0xFF` (the telnet `IAC` byte) ever appears in real device output, it is escaped as `IAC IAC` before being sent to the client. Otherwise a real telnet client's own parser would misread that single byte as the start of a command and eat it.
+- **Incoming client data**: any telnet command bytes the client sends (negotiation replies, or anything else wrapped in `IAC`) are stripped out before the rest reaches `_forward_or_drop`. Only real keystrokes ever reach the serial port.
+
+Turn this on only when the client is a real telnet program. A plain socket tool (`nc`, a test script, `telnet-watch.sh` used for anything other than an actual `telnet` binary) does not speak the telnet protocol, does not expect these extra bytes, and does not need this setting.
 
 ### Platform
 

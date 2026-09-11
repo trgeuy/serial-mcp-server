@@ -29,6 +29,10 @@ serial.open → { "port": "/dev/ttyUSB0", ... }
 
 You see the same byte stream the MCP server sees, live. If the connection drops for any reason, `telnet-watch.sh` notices and reattaches on its own. You do not need to re-run it or guess whether the port has come back.
 
+## Double-echo
+
+Real `telnet` echoes what you type in its own window. If the device also echoes the same keystrokes back, you see everything twice. Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` on the server to fix this — see the Telnet double-echo section in [docs/concepts.md](../../docs/concepts.md). This wrapper script does not need any change; the fix lives entirely on the server side.
+
 ## Why not just run `telnet` directly?
 
 You can. `telnet-watch.sh` only helps with the reconnect case. Plain `telnet` works fine for a single, uninterrupted session. Use this script when the mirror is expected to come and go over a longer working session, and you do not want to babysit it. For example, the agent may close and reopen the connection, the server may restart, or you may want to leave a terminal window watching for hours.

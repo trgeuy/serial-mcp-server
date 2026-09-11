@@ -182,6 +182,7 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 | `SERIAL_MCP_MIRROR_LINK` | `/tmp/serial-mcp` | PTY transport only. This is the base path for the symlinks. Connections get a number, for example `/tmp/serial-mcp0`, `/tmp/serial-mcp1`. |
 | `SERIAL_MCP_MIRROR_TCP_HOST` | `127.0.0.1` | TCP transport only. This is the bind address for the mirror socket. |
 | `SERIAL_MCP_MIRROR_TCP_PORT` | `2424` | TCP transport only. This is the bind port. Set it to `0` to let the OS pick a free port instead. `serial.open`'s response reports the actual port either way. Use `0` if you mirror more than one connection at once: a fixed port can bind to only one connection's mirror at a time. |
+| `SERIAL_MCP_MIRROR_TCP_TELNET` | `0` | TCP transport only. Set to `1` to negotiate telnet echo handling and fix double-echo in a real telnet client. Leave off for plain socket clients (`nc`, test scripts). |
 | `SERIAL_MCP_PACED` | disabled | Turns on the paced-write, gap-calibration, and exclusive-forwarding tools (`paced.*`). Set to `1` to turn them on. |
 | `SERIAL_MCP_LOG_LEVEL` | `WARNING` | The Python log level (`DEBUG`, `INFO`, `WARNING`, or `ERROR`). Logs go to stderr. |
 | `SERIAL_MCP_TRACE` | enabled | JSONL tracing of every tool call. Set to `0`, `false`, or `no` to disable. |
@@ -293,6 +294,16 @@ telnet 127.0.0.1 2424
 ```
 
 `examples/telnet-watch/` includes `telnet-watch.sh`, a poll-and-reconnect wrapper for this transport. Point it at a host and port, or at a named shortcut you define. It stays attached and reconnects automatically whenever the mirror drops.
+
+**Telnet double-echo.** A real telnet client normally echoes what you type in its own window. The device on the other end often echoes the same keystrokes back too. Without any negotiation, you see each character twice. Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix this: the server tells the client it will handle echoing, and the client's local echo turns off. This setting also strips telnet's own protocol bytes out of the mirrored stream so they never reach the serial device. Turn it on only for real telnet clients — a plain socket tool like `nc` does not expect this and does not need it.
+
+```bash
+claude mcp add serial \
+  -e SERIAL_MCP_MIRROR=rw \
+  -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
+  -e SERIAL_MCP_MIRROR_TCP_TELNET=1 \
+  -- serial_mcp
+```
 
 | Mode | Behavior |
 |---|---|

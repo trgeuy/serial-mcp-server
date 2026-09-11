@@ -51,6 +51,19 @@ except ValueError:
     logger.warning("Invalid SERIAL_MCP_MIRROR_TCP_PORT, defaulting to 2424.")
     MIRROR_TCP_PORT = 2424
 
+# Telnet negotiation for the TCP mirror: off by default, same opt-in
+# convention as the mirror feature itself. A real telnet client double-
+# echoes without this (its own local echo plus the device's remote echo) --
+# turning it on sends a WILL ECHO/WILL SUPPRESS-GO-AHEAD negotiation on
+# accept and filters IAC bytes both directions. A plain socket client
+# (e.g. `nc`, a test harness) doesn't need or expect this.
+MIRROR_TCP_TELNET = os.environ.get("SERIAL_MCP_MIRROR_TCP_TELNET", "0").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+    "",
+)
+
 # Paced writes + gap calibration + exclusive-forwarding tools (handlers_paced).
 # Off by default, same opt-in convention as the mirror feature -- not every
 # device needs pacing, so it isn't unconditionally registered like the core

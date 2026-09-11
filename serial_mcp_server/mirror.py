@@ -37,6 +37,91 @@ _EXCLUSIVE_DEFAULT_MS = 5_000
 _EXCLUSIVE_MAX_MS = 30_000
 _EXCLUSIVE_MIN_MS = 100
 
+# Telnet protocol bytes (RFC 854 / RFC 857).
+_TN_IAC = 0xFF
+_TN_WILL = 0xFB
+_TN_WONT = 0xFC
+_TN_DO = 0xFD
+_TN_DONT = 0xFE
+_TN_SB = 0xFA
+_TN_SE = 0xF0
+_TN_ECHO = 0x01
+_TN_SUPPRESS_GO_AHEAD = 0x03
+
+# Sent once, right after accepting a telnet-mode client: tells the client
+# the server will handle echo and won't wait for a "go ahead" signal, which
+# is the standard way to make a real telnet client stop local-echoing (RFC
+# 857). We never inspect the client's reply (DO/DONT) -- either way our
+# behavior doesn't change, so there's nothing to react to.
+_TELNET_NEGOTIATION = bytes(
+    [
+        _TN_IAC,
+        _TN_WILL,
+        _TN_ECHO,
+        _TN_IAC,
+        _TN_WILL,
+        _TN_SUPPRESS_GO_AHEAD,
+    ]
+)
+
+
+class _TelnetFilter:
+    """Strips telnet IAC command sequences from a client's incoming byte stream.
+
+    A real telnet client replies to our negotiation (and may send other IAC
+    commands unprompted) -- those bytes are not device input and must never
+    reach the serial port. This is a minimal state machine, not a full
+    telnet implementation: it recognizes just enough of RFC 854 to discard
+    2-byte commands, 3-byte WILL/WONT/DO/DONT commands, and IAC...SE
+    subnegotiation blocks, while passing an escaped literal 0xFF (IAC IAC)
+    through as a single data byte. State survives across ``feed()`` calls
+    so a command split across two TCP reads is still handled correctly.
+    """
+
+    _DATA = 0
+    _IAC = 1
+    _CMD = 2  # after WILL/WONT/DO/DONT, one option byte follows
+    _SB = 3  # inside a subnegotiation block, discard until IAC SE
+    _SB_IAC = 4  # saw IAC while inside a subnegotiation block
+
+    def __init__(self) -> None:
+        self._state = self._DATA
+
+    def feed(self, data: bytes) -> bytes:
+        out = bytearray()
+        for b in data:
+            if self._state == self._DATA:
+                if b == _TN_IAC:
+                    self._state = self._IAC
+                else:
+                    out.append(b)
+            elif self._state == self._IAC:
+                if b == _TN_IAC:
+                    out.append(b)  # escaped literal 0xFF
+                    self._state = self._DATA
+                elif b in (_TN_WILL, _TN_WONT, _TN_DO, _TN_DONT):
+                    self._state = self._CMD
+                elif b == _TN_SB:
+                    self._state = self._SB
+                else:
+                    # Other 2-byte commands (NOP, DM, BRK, IP, AO, AYT, EC,
+                    # EL, GA, ...) -- no option byte follows.
+                    self._state = self._DATA
+            elif self._state == self._CMD:
+                self._state = self._DATA  # option byte consumed, discard
+            elif self._state == self._SB:
+                if b == _TN_IAC:
+                    self._state = self._SB_IAC
+                # else: subnegotiation payload byte, discard
+            elif self._state == self._SB_IAC:
+                if b == _TN_SE:
+                    self._state = self._DATA
+                elif b == _TN_IAC:
+                    self._state = self._SB  # escaped IAC inside payload
+                else:
+                    self._state = self._SB
+        return bytes(out)
+
 
 # ---------------------------------------------------------------------------
 # SerialBuffer — thread-safe byte buffer
@@ -419,6 +504,18 @@ class TcpMirrorSession(ReaderThread):
     In rw mode, data received from the connected client is forwarded to the
     real serial port via the inherited, pause-gated _forward_or_drop --
     identical mechanism to the PTY transport's rw mode.
+
+    When *telnet* is true, this also speaks just enough of the TELNET
+    protocol (RFC 854/857) to fix double-echo in a real telnet client: it
+    sends a WILL ECHO + WILL SUPPRESS-GO-AHEAD negotiation on accept (so the
+    client stops local-echoing and lets the device's own remote echo show
+    through once), strips any IAC command bytes the client sends back out of
+    the incoming stream before it can reach the serial port, and escapes any
+    literal 0xFF byte in outgoing device data as IAC IAC so a real telnet
+    client's own parser doesn't misread raw device output as a command. A
+    plain socket client (e.g. ``nc``, a test harness) is unaffected either
+    way -- it never sends IAC bytes, and a device byte stream containing a
+    literal 0xFF is rare enough that off-by-default is the safer posture.
     """
 
     def __init__(
@@ -428,11 +525,14 @@ class TcpMirrorSession(ReaderThread):
         mode: str,
         host: str = "127.0.0.1",
         port: int = 0,
+        telnet: bool = False,
     ) -> None:
         super().__init__(ser, buffer)
         self.mode = mode  # "ro" or "rw"
+        self.telnet = telnet
         self.client_connected = False
         self._client_sock: socket.socket | None = None
+        self._telnet_filter: _TelnetFilter | None = None
 
         self._listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -513,6 +613,12 @@ class TcpMirrorSession(ReaderThread):
         new_sock.setblocking(False)
         self._client_sock = new_sock
         self.client_connected = True
+        if self.telnet:
+            self._telnet_filter = _TelnetFilter()
+            try:
+                new_sock.sendall(_TELNET_NEGOTIATION)
+            except OSError:
+                pass  # Client vanished before negotiation could be sent; next read/write will notice.
 
     def _service_client_read(self) -> None:
         try:
@@ -525,6 +631,11 @@ class TcpMirrorSession(ReaderThread):
         if not data:
             self._drop_client()
             return
+
+        if self.telnet and self._telnet_filter is not None:
+            data = self._telnet_filter.feed(data)
+            if not data:
+                return  # Was pure telnet negotiation/command traffic.
 
         if self.mode == "rw":
             self._forward_or_drop(data)
@@ -545,6 +656,10 @@ class TcpMirrorSession(ReaderThread):
         if self._client_sock is None:
             return
         try:
+            if self.telnet:
+                # Escape a literal 0xFF as IAC IAC so a real telnet client's
+                # own parser doesn't mistake raw device output for a command.
+                data = data.replace(bytes([_TN_IAC]), bytes([_TN_IAC, _TN_IAC]))
             self._client_sock.sendall(data)
         except (OSError, BlockingIOError):
             # Client gone or backed up -- drop mirror tee data, same
@@ -558,6 +673,7 @@ class TcpMirrorSession(ReaderThread):
             "tcp_port": self.tcp_port,
             "client_connected": self.client_connected,
             "mode": self.mode,
+            "telnet": self.telnet,
             "forwarding_paused": self.is_forwarding_paused,
             "dropped_while_paused": self.dropped_while_paused,
         }
@@ -595,18 +711,22 @@ def create_reader(
     mirror_transport: str = "pty",
     tcp_host: str = "127.0.0.1",
     tcp_port: int = 0,
+    tcp_telnet: bool = False,
 ) -> ReaderThread:
     """Create the appropriate reader for a serial connection.
 
     *mirror_mode*: ``"off"``, ``"ro"``, or ``"rw"``.
     *mirror_transport*: ``"pty"`` (default, Unix-only) or ``"tcp"``
-    (cross-platform; *tcp_host*/*tcp_port* only apply to this transport).
+    (cross-platform; *tcp_host*/*tcp_port*/*tcp_telnet* only apply to this
+    transport).
     """
     if mirror_mode == "off":
         return ReaderThread(ser, buffer)
 
     if mirror_transport == "tcp":
-        return TcpMirrorSession(ser, buffer, mode=mirror_mode, host=tcp_host, port=tcp_port)
+        return TcpMirrorSession(
+            ser, buffer, mode=mirror_mode, host=tcp_host, port=tcp_port, telnet=tcp_telnet
+        )
 
     if not _IS_UNIX:
         return ReaderThread(ser, buffer)

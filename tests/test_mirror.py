@@ -15,6 +15,7 @@ from serial_mcp_server.mirror import (
     ReaderThread,
     SerialBuffer,
     TcpMirrorSession,
+    _TelnetFilter,
     create_reader,
 )
 
@@ -444,7 +445,7 @@ class TestExclusiveForwarding:
 
 
 class TestTcpMirrorSession:
-    def _make_mirror(self, mode: str) -> TcpMirrorSession:
+    def _make_mirror(self, mode: str, telnet: bool = False) -> TcpMirrorSession:
         """A TcpMirrorSession whose serial side is inert -- these tests only
         exercise the socket side, so the serial-polling loop should never
         see any data (return_value, not side_effect, so it can be read any
@@ -453,7 +454,7 @@ class TestTcpMirrorSession:
         type(ser).in_waiting = PropertyMock(return_value=0)
         ser.read.return_value = b""
         buf = SerialBuffer()
-        return TcpMirrorSession(ser, buf, mode=mode, host="127.0.0.1", port=0)
+        return TcpMirrorSession(ser, buf, mode=mode, host="127.0.0.1", port=0, telnet=telnet)
 
     def _connect_client(self, mirror: TcpMirrorSession) -> socket.socket:
         client = socket.create_connection((mirror.tcp_host, mirror.tcp_port), timeout=2)
@@ -478,6 +479,7 @@ class TestTcpMirrorSession:
                 "tcp_port": mirror.tcp_port,
                 "client_connected": False,
                 "mode": "rw",
+                "telnet": False,
                 "forwarding_paused": False,
                 "dropped_while_paused": 0,
             }
@@ -576,6 +578,132 @@ class TestTcpMirrorSession:
         mirror.stop()
         assert not mirror.alive
         client.close()
+
+    def test_telnet_disabled_by_default_no_negotiation_sent(self):
+        mirror = self._make_mirror("ro")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            assert mirror.mirror_info()["telnet"] is False
+            mirror._on_data(b"plain")
+            assert client.recv(100) == b"plain"  # no leading IAC bytes
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_telnet_negotiation_sent_on_accept(self):
+        mirror = self._make_mirror("ro", telnet=True)
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            expected = bytes([0xFF, 0xFB, 0x01, 0xFF, 0xFB, 0x03])  # IAC WILL ECHO, IAC WILL SGA
+            assert client.recv(100) == expected
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_telnet_mode_strips_clients_negotiation_reply(self):
+        mirror = self._make_mirror("rw", telnet=True)
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            client.recv(100)  # drain our own negotiation bytes
+            client.sendall(bytes([0xFF, 0xFD, 0x01]))  # IAC DO ECHO, a typical reply
+            time.sleep(0.15)
+            mirror.ser.write.assert_not_called()  # pure negotiation traffic, nothing to forward
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_telnet_mode_forwards_real_command_after_negotiation_reply(self):
+        mirror = self._make_mirror("rw", telnet=True)
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            client.recv(100)  # drain our own negotiation bytes
+            client.sendall(bytes([0xFF, 0xFD, 0x01]) + b"STAT\r")
+            time.sleep(0.15)
+            mirror.ser.write.assert_called_once_with(b"STAT\r")
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_telnet_mode_escapes_outgoing_0xff(self):
+        mirror = self._make_mirror("ro", telnet=True)
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            client.recv(100)  # drain our own negotiation bytes
+            mirror._on_data(bytes([0x00, 0xFF, 0x01]))
+            assert client.recv(100) == bytes([0x00, 0xFF, 0xFF, 0x01])
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+
+# ---------------------------------------------------------------------------
+# _TelnetFilter — pure state-machine unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestTelnetFilter:
+    def test_plain_data_passes_through_unchanged(self):
+        f = _TelnetFilter()
+        assert f.feed(b"STAT\r") == b"STAT\r"
+
+    def test_strips_will_wont_do_dont_command(self):
+        # IAC DO ECHO, a typical client reply to our negotiation.
+        f = _TelnetFilter()
+        assert f.feed(bytes([0xFF, 0xFD, 0x01])) == b""
+
+    def test_strips_two_byte_command(self):
+        # IAC NOP (no option byte follows).
+        f = _TelnetFilter()
+        assert f.feed(bytes([0xFF, 0xF1]) + b"ok") == b"ok"
+
+    def test_unescapes_literal_0xff(self):
+        f = _TelnetFilter()
+        assert f.feed(bytes([0xFF, 0xFF])) == bytes([0xFF])
+
+    def test_strips_subnegotiation_block(self):
+        # IAC SB ... IAC SE around a NAWS-style payload, surrounded by data.
+        payload = bytes([0xFF, 0xFA, 0x1F, 0x00, 0x50, 0x00, 0x18, 0xFF, 0xF0])
+        f = _TelnetFilter()
+        assert f.feed(b"before" + payload + b"after") == b"beforeafter"
+
+    def test_command_split_across_two_feed_calls(self):
+        f = _TelnetFilter()
+        # IAC WILL ECHO split as [IAC] [WILL, ECHO].
+        assert f.feed(bytes([0xFF])) == b""
+        assert f.feed(bytes([0xFB, 0x01]) + b"data") == b"data"
+
+    def test_escaped_iac_split_across_two_feed_calls(self):
+        f = _TelnetFilter()
+        assert f.feed(bytes([0xFF])) == b""
+        assert f.feed(bytes([0xFF]) + b"x") == bytes([0xFF]) + b"x"
+
+    def test_mixed_stream_commands_and_data(self):
+        f = _TelnetFilter()
+        stream = (
+            bytes([0xFF, 0xFD, 0x01])  # IAC DO ECHO
+            + b"STAT\r"
+            + bytes([0xFF, 0xFE, 0x03])  # IAC DONT SUPPRESS-GO-AHEAD
+        )
+        assert f.feed(stream) == b"STAT\r"
 
 
 # ---------------------------------------------------------------------------
