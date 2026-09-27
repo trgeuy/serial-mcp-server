@@ -134,6 +134,16 @@ claude mcp add serial -e SERIAL_MCP_PLUGINS=mydevice,ota -- serial_mcp
 claude mcp add serial -e SERIAL_MCP_LOG_LEVEL=DEBUG -- serial_mcp
 ```
 
+### The `serial-mcp` skill
+
+This repo includes a Claude Code skill, `.claude/skills/serial-mcp/`. It tells the agent how
+to drive real hardware with these tools: how to send control bytes, how to pace a UART with
+no flow control, and when an old console is ready for the next command. Its
+`references/device-profiles.md` holds measured gaps and delays for specific machines.
+
+The skill loads automatically when you run Claude Code in this repo. To use it in every
+project, copy the folder to `~/.claude/skills/serial-mcp/`.
+
 ## Add to VS Code / Copilot
 
 Add to your project's `.vscode/mcp.json` (or create it):
