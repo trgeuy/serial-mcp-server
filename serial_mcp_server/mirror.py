@@ -497,7 +497,7 @@ class TcpMirrorSession(ReaderThread):
 
     A new client connection replaces any existing one rather than being
     refused. This is deliberate: it matches how a poll-and-reconnect script
-    (e.g. telnet-watch.sh) already behaves on the client side -- drop and
+    (e.g. examples/mirror-watch/) already behaves on the client side -- drop and
     reattach freely, the mirror just takes the newest connection, with no
     stale-attachment problem for the client to detect or recover from.
 

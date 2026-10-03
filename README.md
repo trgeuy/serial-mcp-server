@@ -321,26 +321,26 @@ The response reports the actual bound host and port:
 
 It defaults to a fixed port, `2424`, so client scripts can hardcode it. If you mirror more than one connection at once, a fixed port will not work — only one connection can bind it at a time. Set `SERIAL_MCP_MIRROR_TCP_PORT=0` instead, so the OS picks a free port per connection, and read the actual port back from each connection's response.
 
-In another terminal:
+In another terminal, watch it with the `mirror-watch` script (next section), or with any raw TCP client.
+
+### Watching with `mirror-watch`
+
+`examples/mirror-watch/` has a watch script for each platform: `mirror-watch.sh` for macOS and Linux (bash only), and `mirror-watch.ps1` for Windows (PowerShell only). Neither needs `telnet` or `nc`. The script waits for the mirror, shows its output, and connects again on its own when the mirror drops (a server restart, or a new client taking its place). So you can leave a window watching for a full working session.
 
 ```bash
-telnet 127.0.0.1 2424
+./examples/mirror-watch/mirror-watch.sh            # localhost:2424, this server's default
+./examples/mirror-watch/mirror-watch.sh 54321      # another port on localhost
 ```
 
-### Watching with `telnet-watch.sh`
-
-Plain `telnet` works, but it does not reconnect: if the mirror drops (a server restart, or a new connection cycling in) you have to notice and reconnect by hand. `examples/telnet-watch/telnet-watch.sh` wraps `telnet` with a poll-and-reconnect loop, so it's meant for longer working sessions where you'd rather leave a terminal watching than babysit it.
-
-Point it at a raw host and port, or at a named shortcut from its editable `case` statement — the script ships with a `serial` shortcut for this server's default mirror port:
-
-```bash
-./examples/telnet-watch/telnet-watch.sh serial          # shortcut for localhost:2424
-./examples/telnet-watch/telnet-watch.sh 127.0.0.1 2424  # equivalent, spelled out
+```powershell
+powershell -ExecutionPolicy Bypass -File .\examples\mirror-watch\mirror-watch.ps1
 ```
 
-See [examples/telnet-watch/README.md](examples/telnet-watch/README.md) for the full quick start, including the `SERIAL_MCP_MIRROR_TCP_PORT=0` case, and how it tells a deliberate quit apart from a dropped connection.
+Windows does not run script files by default. `-ExecutionPolicy Bypass` runs this one, one time. To run scripts directly from now on, see [Running a script on Windows](examples/mirror-watch/README.md#running-a-script-on-windows).
 
-Since this script always connects with a real `telnet` binary, you will usually also want `SERIAL_MCP_MIRROR_TCP_TELNET=1` on the server — see the next section.
+The scripts only watch: they do not send what you type. To type into the device through an `rw` mirror, use a full terminal emulator, or `telnet` with the setting in the next section. Leave that setting off when you use `mirror-watch`, because the scripts show its negotiation bytes as junk.
+
+See [examples/mirror-watch/README.md](examples/mirror-watch/README.md) for all arguments, the `SERIAL_MCP_MIRROR_TCP_PORT=0` case, and what happens with two watch windows.
 
 ### Telnet double-echo
 

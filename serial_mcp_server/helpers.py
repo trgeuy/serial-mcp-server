@@ -30,8 +30,8 @@ if MIRROR_PTY != "off" and MIRROR_PTY_LINK is None:
     MIRROR_PTY_LINK = "/tmp/serial-mcp"  # noqa: S108  # nosec B108 — intentional default, user-overridable via SERIAL_MCP_MIRROR_LINK
 
 # Mirror transport: "pty" (default, Unix-only device-file semantics) or
-# "tcp" (cross-platform; a plain socket, spoken as telnet by tools like
-# telnet-watch.sh). Loopback-only by default -- same opt-in security
+# "tcp" (cross-platform; a plain socket, read by raw TCP clients like
+# examples/mirror-watch/, or by telnet). Loopback-only by default -- same opt-in security
 # posture as the mirror feature itself; set MIRROR_TCP_HOST to widen it.
 MIRROR_TRANSPORT = os.environ.get("SERIAL_MCP_MIRROR_TRANSPORT", "pty").strip().lower()
 if MIRROR_TRANSPORT not in ("pty", "tcp"):
@@ -40,7 +40,7 @@ if MIRROR_TRANSPORT not in ("pty", "tcp"):
 MIRROR_TCP_HOST = os.environ.get("SERIAL_MCP_MIRROR_TCP_HOST", "127.0.0.1").strip()
 try:
     # Default 2424: a fixed, memorable port so client scripts (e.g.
-    # telnet-watch.sh) can hardcode it without reading serial.open's
+    # examples/mirror-watch/) can hardcode it without reading serial.open's
     # response first. Only one serial connection can bind it at a time --
     # mirroring a second simultaneous connection needs a different port, or
     # set this to "0" to let the OS pick an ephemeral one (reported back via
