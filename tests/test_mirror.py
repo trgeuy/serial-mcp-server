@@ -235,6 +235,42 @@ class TestReaderThread:
 
 
 @pytest.mark.skipif(not _IS_UNIX, reason="PTY mirror requires Unix")
+class TestReaderFailure:
+    def test_reader_gives_up_and_reports_after_repeated_errors(self):
+        """An unplugged adapter makes every read fail: the reader must say so, not just go quiet."""
+        ser = MagicMock()
+        ser.port = "/dev/ttyUSB0"
+        type(ser).in_waiting = PropertyMock(side_effect=OSError(6, "Device not configured"))
+        reader = ReaderThread(ser, SerialBuffer())
+        reader.start()
+        deadline = time.monotonic() + 5
+        while reader.alive and time.monotonic() < deadline:
+            time.sleep(0.05)
+        try:
+            assert not reader.alive
+            status = reader.reader_status()
+            assert status["reader_failed"] is True
+            assert "Device not configured" in status["reader_last_error"]
+        finally:
+            reader.stop()
+
+    def test_healthy_reader_status(self):
+        ser = MagicMock()
+        type(ser).in_waiting = PropertyMock(return_value=0)
+        ser.read.return_value = b""
+        reader = ReaderThread(ser, SerialBuffer())
+        reader.start()
+        try:
+            time.sleep(0.1)
+            assert reader.reader_status() == {
+                "reader_alive": True,
+                "reader_failed": False,
+                "reader_last_error": None,
+            }
+        finally:
+            reader.stop()
+
+
 class TestMirrorSession:
     def test_creates_pty(self):
         ser = MagicMock()
@@ -363,6 +399,14 @@ class TestExclusiveForwarding:
             assert mirror.is_forwarding_paused is False
         finally:
             mirror.stop()
+
+    def test_nested_short_pause_does_not_shorten_outer(self):
+        reader = ReaderThread(MagicMock(), SerialBuffer())
+        reader.pause_forwarding(timeout_ms=30_000)
+        reader.pause_forwarding(timeout_ms=100)
+        time.sleep(0.2)
+        reader._check_pause_expired()
+        assert reader.pause_depth == 2
 
     def test_resume_without_pause_is_safe_noop(self):
         mirror = self._make_rw_mirror()
@@ -548,7 +592,12 @@ class TestTcpMirrorSession:
                 client.close()
             mirror.stop()
 
-    def test_new_client_replaces_old(self):
+    def test_second_client_refused_first_keeps_mirror(self):
+        """One watcher at a time: a newcomer gets a busy notice and is closed.
+
+        Replacing the first client instead made two auto-reconnecting
+        watchers knock each other off every second.
+        """
         mirror = self._make_mirror("ro")
         client1 = client2 = None
         try:
@@ -558,16 +607,116 @@ class TestTcpMirrorSession:
             client2 = self._connect_client(mirror)
             time.sleep(0.15)
 
-            # client1 was dropped -- its socket should now read EOF.
-            assert client1.recv(100) == b""
+            notice = b""
+            while True:
+                chunk = client2.recv(200)
+                if not chunk:
+                    break
+                notice += chunk
+            assert b"another client is already connected" in notice
 
-            mirror._on_data(b"only for client2")
-            assert client2.recv(100) == b"only for client2"
+            mirror._on_data(b"still for client1")
+            assert client1.recv(100) == b"still for client1"
         finally:
             if client1 is not None:
                 client1.close()
             if client2 is not None:
                 client2.close()
+            mirror.stop()
+
+    def test_place_frees_when_first_client_closes(self):
+        mirror = self._make_mirror("ro")
+        client1 = client2 = None
+        try:
+            mirror.start()
+            client1 = self._connect_client(mirror)
+            time.sleep(0.15)
+            client1.close()
+            client1 = None
+            time.sleep(0.3)
+            client2 = self._connect_client(mirror)
+            time.sleep(0.15)
+            mirror._on_data(b"for client2")
+            assert client2.recv(100) == b"for client2"
+        finally:
+            if client2 is not None:
+                client2.close()
+            mirror.stop()
+
+    def test_bind_failure_closes_listen_socket_and_raises(self):
+        blocker = socket.socket()
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        try:
+            ser = MagicMock()
+            with pytest.raises(OSError):
+                TcpMirrorSession(
+                    ser, SerialBuffer(), mode="ro", host="127.0.0.1", port=blocker.getsockname()[1]
+                )
+        finally:
+            blocker.close()
+
+    def test_client_bytes_held_while_write_lock_busy(self):
+        """The reader never blocks on write_lock (a paced write can hold it
+        for seconds): client bytes wait in a queue and go out after."""
+        mirror = self._make_mirror("rw")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            mirror.write_lock.acquire()
+            try:
+                client.sendall(b"a")
+                time.sleep(0.15)
+                client.sendall(b"b")
+                time.sleep(0.15)
+                # Both bytes were read while the lock was busy: the loop kept running.
+                assert bytes(mirror._pending_forward) == b"ab"
+                mirror.ser.write.assert_not_called()
+            finally:
+                mirror.write_lock.release()
+            time.sleep(0.3)
+            mirror.ser.write.assert_called_once_with(b"ab")
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_held_bytes_dropped_if_pause_starts(self):
+        """Bytes typed before exclusive_begin must not land inside the paused sequence."""
+        mirror = self._make_mirror("rw")
+        client = None
+        try:
+            mirror.start()
+            client = self._connect_client(mirror)
+            time.sleep(0.15)
+            mirror.write_lock.acquire()
+            try:
+                client.sendall(b"k")
+                time.sleep(0.15)
+                mirror.pause_forwarding(timeout_ms=5_000)
+            finally:
+                mirror.write_lock.release()
+            time.sleep(0.3)
+            mirror.ser.write.assert_not_called()
+            assert mirror.dropped_while_paused == 1
+        finally:
+            if client is not None:
+                client.close()
+            mirror.stop()
+
+    def test_held_bytes_capped(self):
+        mirror = self._make_mirror("rw")
+        try:
+            mirror.write_lock.acquire()
+            try:
+                mirror._forward_or_drop(b"x" * 5000)
+            finally:
+                mirror.write_lock.release()
+            assert len(mirror._pending_forward) == 4096
+            assert mirror.dropped_pending_overflow == 5000 - 4096
+        finally:
             mirror.stop()
 
     def test_stop_closes_listener_and_client(self):

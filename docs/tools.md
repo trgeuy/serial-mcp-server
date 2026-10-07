@@ -59,6 +59,10 @@ Open a serial port connection. It returns a `connection_id` for use with other t
 
 Only `port` is required. All other parameters have defaults.
 
+`exclusive` (default `true`) locks the port, so a second program that also asks for exclusive access cannot open it. An example is a second serial-mcp server in another agent session. Without the lock, both servers read from the device, and each gets only part of the bytes. On macOS and Linux this is an advisory lock: tools that do not ask for one, such as `screen` or `minicom`, can still open the port. Windows always opens a port exclusively. If the port is locked, `serial.open` fails with an `io_error` that says "Could not exclusively lock port".
+
+If the mirror cannot start (for example, the TCP mirror port is in use), `serial.open` closes the port again and returns the error `mirror_unavailable`.
+
 Returns:
 
 ```json
@@ -103,7 +107,9 @@ Check whether a serial connection is still open. Return its configuration.
 { "connection_id": "s1a2b3c4" }
 ```
 
-Returns `{ "ok": true, "is_open": true, "config": { ... }, "buffered_bytes": 0 }`. The response includes `mirror` when the mirror is active.
+Returns `{ "ok": true, "is_open": true, "config": { ... }, "buffered_bytes": 0, "reader_alive": true, "reader_failed": false, "reader_last_error": null }`. The response includes `mirror` when the mirror is active.
+
+The background reader stops after 10 read errors in a row, for example when a USB serial adapter is unplugged. Then `reader_failed` is `true` and `reader_last_error` shows the last error. A read that finds no data on such a connection returns the error `reader_stopped`, not an empty result. Close the connection and open it again.
 
 ### serial.read
 

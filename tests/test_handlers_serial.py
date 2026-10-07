@@ -150,6 +150,30 @@ class TestClose:
         with pytest.raises(KeyError):
             await handle_close(state, {"connection_id": "nonexistent"})
 
+    async def test_close_does_not_block_event_loop(self, connected_entry):
+        """Stopping the reader can take seconds; other tool calls must keep running meanwhile."""
+        import asyncio
+        import time as _time
+
+        state, conn = connected_entry
+        conn.reader.stop.side_effect = lambda: _time.sleep(0.5)
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            for _ in range(20):
+                await asyncio.sleep(0.02)
+                ticks += 1
+
+        tick_task = asyncio.create_task(ticker())
+        result = await handle_close(state, {"connection_id": "s1"})
+        ticks_during_close = ticks  # a blocked event loop would leave this near 0
+        await tick_task
+        assert result["ok"]
+        assert ticks_during_close >= 10
+        conn.reader.stop.assert_called_once()
+        conn.ser.close.assert_called_once()
+
 
 class TestConnectionStatus:
     async def test_status(self, connected_entry):
@@ -200,6 +224,30 @@ class TestRead:
         result = await handle_read(state, {"connection_id": "s1", "as": "base64"})
         assert result["ok"]
         assert result["data"] == "AQID"
+
+    async def test_read_reports_stopped_reader(self, connected_entry):
+        state, conn = connected_entry
+        conn.reader.failed = True
+        conn.reader.last_error = "SerialException: device disconnected"
+        result = await handle_read(state, {"connection_id": "s1", "timeout_ms": 10})
+        assert not result["ok"]
+        assert result["error"]["code"] == "reader_stopped"
+        assert "device disconnected" in result["error"]["message"]
+
+    async def test_read_drains_buffer_even_if_reader_stopped(self, connected_entry):
+        state, conn = connected_entry
+        conn.reader.failed = True
+        conn.buffer.write(b"last words")
+        result = await handle_read(state, {"connection_id": "s1"})
+        assert result["ok"]
+        assert result["data"] == "last words"
+
+    async def test_readline_reports_stopped_reader(self, connected_entry):
+        state, conn = connected_entry
+        conn.reader.failed = True
+        conn.reader.last_error = "OSError: gone"
+        result = await handle_readline(state, {"connection_id": "s1", "timeout_ms": 10})
+        assert result["error"]["code"] == "reader_stopped"
 
     async def test_read_empty_on_timeout(self, connected_entry):
         state, conn = connected_entry
@@ -331,6 +379,46 @@ class TestOpenResourceCleanup:
             await handle_open(state, {"port": "/dev/ttyUSB0"})
         mock_reader.stop.assert_called_once()
         mock_ser.close.assert_called_once()
+
+    async def test_open_is_exclusive_by_default(self):
+        """Without the lock, a second server process could open the same device and steal bytes."""
+        import sys as _sys
+
+        state = SerialState()
+        mock_ser = MagicMock()
+        mock_ser.is_open = True
+        mock_reader = MagicMock()
+        mock_reader.mirror_info.return_value = None
+        with (
+            patch("serial_mcp_server.handlers_serial.pyserial.Serial", return_value=mock_ser) as ctor,
+            patch("serial_mcp_server.handlers_serial.create_reader", return_value=mock_reader),
+        ):
+            await handle_open(state, {"port": "/dev/ttyUSB0"})
+            assert ctor.call_args.kwargs["exclusive"] is True
+            await handle_open(state, {"port": "/dev/ttyUSB1", "exclusive": False})
+            if _sys.platform != "win32":
+                assert ctor.call_args.kwargs["exclusive"] is False
+            else:
+                assert "exclusive" not in ctor.call_args.kwargs
+
+    async def test_open_closes_port_when_mirror_cannot_start(self):
+        """A mirror that cannot start (e.g. its TCP port is busy) must not leave the serial port open."""
+        state = SerialState()
+        mock_ser = MagicMock()
+        mock_ser.is_open = True
+        with (
+            patch("serial_mcp_server.handlers_serial.pyserial.Serial", return_value=mock_ser),
+            patch(
+                "serial_mcp_server.handlers_serial.create_reader",
+                side_effect=OSError(48, "Address already in use"),
+            ),
+        ):
+            result = await handle_open(state, {"port": "/dev/ttyUSB0"})
+        assert not result["ok"]
+        assert result["error"]["code"] == "mirror_unavailable"
+        assert "Address already in use" in result["error"]["message"]
+        mock_ser.close.assert_called_once()
+        assert state.connections == {}
 
 
 class TestFormatData:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import sys
 import time
 from typing import Any
 
@@ -153,7 +154,13 @@ TOOLS: list[Tool] = [
                 },
                 "exclusive": {
                     "type": ["boolean", "string"],
-                    "description": "Request exclusive access (platform-dependent, ignored if unsupported).",
+                    "default": True,
+                    "description": (
+                        "Lock the port so a second program that also asks for exclusive access "
+                        "(e.g. another serial-mcp server) cannot open it (default true). On macOS/Linux "
+                        "this is an advisory lock: tools that do not ask for one (screen, minicom) are "
+                        "not stopped. Windows always opens ports exclusively."
+                    ),
                 },
                 "encoding": {
                     "type": "string",
@@ -453,7 +460,10 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
     stopbits = float(args.get("stopbits", 1))
     timeout_ms = int(args.get("timeout_ms", 200))
     write_timeout_ms = int(args.get("write_timeout_ms", 200))
-    exclusive = _coerce_bool(args["exclusive"]) if "exclusive" in args else None
+    # Default: exclusive. Without the lock, a second serial-mcp process (for
+    # example a second agent session) can open the same device, and each
+    # process then gets only part of the incoming bytes, with no error.
+    exclusive = _coerce_bool(args["exclusive"]) if "exclusive" in args else True
     encoding = args.get("encoding", "utf-8")
     newline = args.get("newline", "\r\n")
 
@@ -487,23 +497,39 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
         "timeout": timeout_s,
         "write_timeout": write_timeout_s,
     }
-    if exclusive is not None:
-        kwargs["exclusive"] = exclusive
+    if exclusive or sys.platform != "win32":
+        kwargs["exclusive"] = exclusive  # win32 rejects exclusive=False (always exclusive there)
 
     ser = await asyncio.to_thread(pyserial.Serial, **kwargs)
 
     connection_id = state.generate_id()
     buf = SerialBuffer()
-    reader = create_reader(
-        ser,
-        buf,
-        MIRROR_PTY,
-        MIRROR_PTY_LINK,
-        mirror_transport=MIRROR_TRANSPORT,
-        tcp_host=MIRROR_TCP_HOST,
-        tcp_port=MIRROR_TCP_PORT,
-        tcp_telnet=MIRROR_TCP_TELNET,
-    )
+    try:
+        reader = create_reader(
+            ser,
+            buf,
+            MIRROR_PTY,
+            MIRROR_PTY_LINK,
+            mirror_transport=MIRROR_TRANSPORT,
+            tcp_host=MIRROR_TCP_HOST,
+            tcp_port=MIRROR_TCP_PORT,
+            tcp_telnet=MIRROR_TCP_TELNET,
+        )
+    except OSError as exc:
+        # The port is already open here. Close it, or it stays locked until
+        # the server exits (no connection is registered to close it).
+        ser.close()
+        if MIRROR_TRANSPORT == "tcp":
+            hint = (
+                f" Another connection or program may use TCP port {MIRROR_TCP_PORT}: close it, or "
+                "set SERIAL_MCP_MIRROR_TCP_PORT to a free port (0 lets the OS pick one)."
+            )
+        else:
+            hint = ""
+        return _err(
+            "mirror_unavailable",
+            f"Could not start the {MIRROR_TRANSPORT} mirror: {exc}. {port} was closed again.{hint}",
+        )
     reader.start()
 
     conn = SerialConnection(
@@ -539,10 +565,31 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
     return result
 
 
+def _reader_stopped_error(conn: Any) -> dict[str, Any] | None:
+    """An error result if the background reader gave up, else None.
+
+    After repeated read errors (e.g. an unplugged USB serial adapter) the
+    reader stops, and every read would time out empty forever. Say so.
+    """
+    if conn.reader is None or getattr(conn.reader, "failed", False) is not True:
+        return None
+    return _err(
+        "reader_stopped",
+        f"The background reader for {conn.port} stopped after repeated errors "
+        f"(last: {conn.reader.last_error}). The device may be unplugged or gone. "
+        "Close this connection and open it again.",
+    )
+
+
 async def handle_close(state: SerialState, args: dict[str, Any]) -> dict[str, Any]:
     connection_id = args["connection_id"]
-    info = state.close_connection(connection_id)
-    return _ok(message=f"Closed {info['port']}.", **info)
+    # Remove on the event loop (all state changes happen there), then stop
+    # the reader and close the port in a worker thread: stopping the reader
+    # can wait up to 3 s, and on the event loop that would stall every
+    # other tool call meanwhile.
+    conn = state.remove_connection(connection_id)
+    await asyncio.to_thread(state.release, conn)
+    return _ok(message=f"Closed {conn.port}.", connection_id=connection_id, port=conn.port)
 
 
 async def handle_connection_status(state: SerialState, args: dict[str, Any]) -> dict[str, Any]:
@@ -557,6 +604,7 @@ async def handle_connection_status(state: SerialState, args: dict[str, Any]) -> 
         "buffered_bytes": conn.buffer.available,
     }
     if conn.reader is not None:
+        result.update(conn.reader.reader_status())
         mirror = conn.reader.mirror_info()
         if mirror is not None:
             result["mirror"] = mirror
@@ -572,6 +620,8 @@ async def handle_read(state: SerialState, args: dict[str, Any]) -> dict[str, Any
 
     raw = await asyncio.to_thread(conn.buffer.read, nbytes, timeout_s)
 
+    if not raw and (stopped := _reader_stopped_error(conn)) is not None:
+        return stopped
     conn.last_seen_ts = time.time()
     formatted = _format_data(raw, fmt, conn.encoding)
     return _ok(
@@ -642,6 +692,8 @@ async def handle_readline(state: SerialState, args: dict[str, Any]) -> dict[str,
 
     raw = await asyncio.to_thread(conn.buffer.read_until, expected, max_bytes, timeout_s)
 
+    if not raw and (stopped := _reader_stopped_error(conn)) is not None:
+        return stopped
     conn.last_seen_ts = time.time()
     formatted = _format_data(raw, fmt, conn.encoding)
     return _ok(
@@ -662,6 +714,8 @@ async def handle_read_until(state: SerialState, args: dict[str, Any]) -> dict[st
 
     raw = await asyncio.to_thread(conn.buffer.read_until, expected, max_bytes, timeout_s)
 
+    if not raw and (stopped := _reader_stopped_error(conn)) is not None:
+        return stopped
     conn.last_seen_ts = time.time()
     formatted = _format_data(raw, fmt, conn.encoding)
     return _ok(

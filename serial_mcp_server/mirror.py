@@ -65,6 +65,10 @@ _TELNET_NEGOTIATION = bytes(
 )
 
 
+# Sent to a second mirror client before it is closed (TCP transport).
+_BUSY_MESSAGE = b"\r\n[serial-mcp mirror: another client is already connected]\r\n"
+
+
 class _TelnetFilter:
     """Strips telnet IAC command sequences from a client's incoming byte stream.
 
@@ -228,6 +232,20 @@ class ReaderThread:
         self._pause_deadline: float | None = None
         self.dropped_while_paused = 0
 
+        # Mirror-client bytes waiting for write_lock. Touched only by the
+        # reader thread. The reader must never block on write_lock: a paced
+        # write can hold it for many seconds, and a blocked reader stops
+        # reading the serial port (the mirror and the buffer both freeze).
+        self._pending_forward = bytearray()
+        self.dropped_pending_overflow = 0
+
+        # Reader health, shown by serial.connection_status and in read
+        # errors. "failed" means the loop gave up after repeated errors (for
+        # example, a USB serial adapter was unplugged): reads then stay empty
+        # forever, so callers must be told instead of seeing only timeouts.
+        self.failed = False
+        self.last_error: str | None = None
+
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True, name="serial-reader")
         self._thread.start()
@@ -244,6 +262,28 @@ class ReaderThread:
 
     _MAX_CONSECUTIVE_ERRORS = 10
 
+    def _record_error(self, exc: BaseException, errors: int) -> bool:
+        """Note a read error. Returns True when the loop must give up."""
+        self.last_error = f"{type(exc).__name__}: {exc}"
+        if errors >= self._MAX_CONSECUTIVE_ERRORS:
+            self.failed = True
+            logger.warning(
+                "Reader thread for %s stopping after %d consecutive errors (last: %s).",
+                self.ser.port,
+                errors,
+                self.last_error,
+            )
+            return True
+        return False
+
+    def reader_status(self) -> dict[str, Any]:
+        """Health of the background reader, for status and error reports."""
+        return {
+            "reader_alive": self.alive,
+            "reader_failed": self.failed,
+            "reader_last_error": self.last_error,
+        }
+
     def _run(self) -> None:
         errors = 0
         while not self._stop.is_set():
@@ -259,14 +299,11 @@ class ReaderThread:
                     if data:
                         self._on_data(data)
                 errors = 0
-            except Exception:
+            except Exception as exc:
                 if self._stop.is_set():
                     break
                 errors += 1
-                if errors >= self._MAX_CONSECUTIVE_ERRORS:
-                    logger.warning(
-                        "Reader thread for %s stopping after %d consecutive errors.", self.ser.port, errors
-                    )
+                if self._record_error(exc, errors):
                     break
                 time.sleep(0.1)
 
@@ -295,8 +332,13 @@ class ReaderThread:
             timeout_ms = _EXCLUSIVE_DEFAULT_MS
         timeout_ms = max(_EXCLUSIVE_MIN_MS, min(float(timeout_ms), _EXCLUSIVE_MAX_MS))
         with self._pause_lock:
+            deadline = time.monotonic() + timeout_ms / 1000.0
+            # A nested begin may extend the pause but never shorten it: an
+            # inner 100 ms pause must not end an outer 30 s one early.
+            if self._pause_depth > 0 and self._pause_deadline is not None:
+                deadline = max(deadline, self._pause_deadline)
             self._pause_depth += 1
-            self._pause_deadline = time.monotonic() + timeout_ms / 1000.0
+            self._pause_deadline = deadline
         return timeout_ms
 
     def resume_forwarding(self) -> None:
@@ -337,15 +379,46 @@ class ReaderThread:
     def _forward_or_drop(self, data: bytes) -> None:
         """Forward *data* (from an external mirror client) to the serial port.
 
-        Drops and counts it instead if forwarding is currently paused. Shared
+        Drops and counts it instead if forwarding is currently paused. If a
+        write owns the port (write_lock busy), holds the bytes and lets the
+        reader loop send them later, so the reader thread never blocks. Shared
         by every mirror transport's rw-mode branch -- the decision is the
         same regardless of whether the bytes came from a PTY or a socket.
         """
         if self.is_forwarding_paused:
             self.dropped_while_paused += len(data)
             return
-        with self.write_lock:
-            self.ser.write(data)
+        room = self._MAX_PENDING_FORWARD - len(self._pending_forward)
+        if len(data) > room:
+            self.dropped_pending_overflow += len(data) - max(room, 0)
+            data = data[: max(room, 0)]
+        self._pending_forward.extend(data)
+        self._flush_pending_forward()
+
+    # Upper bound on client bytes held while a paced write owns the port.
+    # A human types a few bytes per second; 4 KiB is minutes of typing.
+    _MAX_PENDING_FORWARD = 4096
+
+    def _flush_pending_forward(self) -> None:
+        """Write held mirror-client bytes if the port is free. Never blocks.
+
+        Called by the reader loop on every pass. If an exclusive pause has
+        started since the bytes arrived, they are dropped instead: they must
+        not land in the middle of the paused sequence.
+        """
+        if not self._pending_forward:
+            return
+        if self.is_forwarding_paused:
+            self.dropped_while_paused += len(self._pending_forward)
+            self._pending_forward.clear()
+            return
+        if not self.write_lock.acquire(blocking=False):
+            return  # A paced or normal write owns the port; try on the next pass.
+        try:
+            self.ser.write(bytes(self._pending_forward))
+            self._pending_forward.clear()
+        finally:
+            self.write_lock.release()
 
 
 # ---------------------------------------------------------------------------
@@ -428,16 +501,25 @@ class MirrorSession(ReaderThread):
     def _run(self) -> None:
         ser_fd = self.ser.fileno()
         read_fds = [ser_fd, self._master_fd] if self.mode == "rw" else [ser_fd]
+        errors = 0  # consecutive serial-side errors, same limit as the other loops
 
         while not self._stop.is_set():
             if self.mode == "rw":
                 self._check_pause_expired()
+                try:
+                    self._flush_pending_forward()
+                except Exception:
+                    if self._stop.is_set():
+                        return
 
             try:
                 readable, _, _ = select.select(read_fds, [], [], 0.05)
-            except (OSError, ValueError):
+            except (OSError, ValueError) as exc:
                 if self._stop.is_set():
                     break
+                errors += 1
+                if self._record_error(exc, errors):
+                    return
                 time.sleep(0.1)
                 continue
 
@@ -448,8 +530,12 @@ class MirrorSession(ReaderThread):
                         data = self.ser.read(waiting or 1)
                         if data:
                             self._on_data(data)
-                    except Exception:
+                        errors = 0
+                    except Exception as exc:
                         if self._stop.is_set():
+                            return
+                        errors += 1
+                        if self._record_error(exc, errors):
                             return
                         time.sleep(0.1)
 
@@ -495,11 +581,12 @@ class TcpMirrorSession(ReaderThread):
     services the TCP side with a short, separate, non-blocking select()
     each loop iteration (sockets ARE select()-able everywhere).
 
-    A new client connection replaces any existing one rather than being
-    refused. This is deliberate: it matches how a poll-and-reconnect script
-    (e.g. examples/mirror-watch/) already behaves on the client side -- drop and
-    reattach freely, the mirror just takes the newest connection, with no
-    stale-attachment problem for the client to detect or recover from.
+    One client at a time. A second connection gets a one-line "busy" notice
+    and is closed; the first client keeps the mirror. (Replacing the first
+    client instead made two auto-reconnecting watchers, e.g.
+    examples/mirror-watch/, knock each other off every second.) A client that
+    disconnects is noticed on the next loop pass, so a reconnecting watcher
+    gets the mirror back at once.
 
     In rw mode, data received from the connected client is forwarded to the
     real serial port via the inherited, pause-gated _forward_or_drop --
@@ -535,8 +622,21 @@ class TcpMirrorSession(ReaderThread):
         self._telnet_filter: _TelnetFilter | None = None
 
         self._listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._listen_sock.bind((host, port))
+        if sys.platform == "win32":
+            # On Windows, SO_REUSEADDR lets a second socket bind a port that
+            # is already in use, so two servers would both "own" the mirror
+            # port. SO_EXCLUSIVEADDRUSE makes the second bind fail instead.
+            self._listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            # On Unix, SO_REUSEADDR only allows a rebind while the old socket
+            # is in TIME_WAIT (a quick close and reopen); a port in active use on
+            # the same address still fails to bind.
+            self._listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self._listen_sock.bind((host, port))
+        except OSError:
+            self._listen_sock.close()
+            raise
         self._listen_sock.listen(1)
         self._listen_sock.setblocking(False)
         bound_host, bound_port = self._listen_sock.getsockname()[:2]
@@ -562,24 +662,21 @@ class TcpMirrorSession(ReaderThread):
         while not self._stop.is_set():
             if self.mode == "rw":
                 self._check_pause_expired()
-            self._service_sockets()
 
             try:
+                self._service_sockets()
+                if self.mode == "rw":
+                    self._flush_pending_forward()
                 waiting = self.ser.in_waiting
                 data = self.ser.read(waiting) if waiting else self.ser.read(1)
                 if data:
                     self._on_data(data)
                 errors = 0
-            except Exception:
+            except Exception as exc:
                 if self._stop.is_set():
                     break
                 errors += 1
-                if errors >= self._MAX_CONSECUTIVE_ERRORS:
-                    logger.warning(
-                        "TCP mirror reader thread for %s stopping after %d consecutive errors.",
-                        self.ser.port,
-                        errors,
-                    )
+                if self._record_error(exc, errors):
                     break
                 time.sleep(0.1)
 
@@ -605,11 +702,21 @@ class TcpMirrorSession(ReaderThread):
         except OSError:
             return
         if self._client_sock is not None:
-            logger.info("New mirror client %s replacing previous client on %s.", addr, self.ser.port)
+            # One watcher at a time. Refuse the newcomer rather than replace
+            # the current one: with replacement, two auto-reconnecting
+            # watchers knock each other off every second and each sees only
+            # part of the output. A closed watcher is dropped as soon as its
+            # socket reads EOF, so its place frees up at once.
+            logger.info("Mirror client %s refused on %s: another client is connected.", addr, self.ser.port)
             try:
-                self._client_sock.close()
+                new_sock.sendall(_BUSY_MESSAGE)
             except OSError:
                 pass
+            try:
+                new_sock.close()
+            except OSError:
+                pass
+            return
         new_sock.setblocking(False)
         self._client_sock = new_sock
         self.client_connected = True

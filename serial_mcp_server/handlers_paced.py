@@ -552,7 +552,16 @@ async def handle_calibrate(state: SerialState, args: dict[str, Any]) -> dict[str
         state, connection_id, inter_ms, eol_ms, test_lines, newline, read_timeout_ms, quiet_ms, flush_before
     )
 
-    if result["received_bytes"] == 0:
+    if (
+        result["received_bytes"] == 0
+        and conn.reader is not None
+        and getattr(conn.reader, "failed", False) is True
+    ):
+        message = (
+            f"No data echoed back: the background reader stopped after repeated errors "
+            f"(last: {conn.reader.last_error}). Close the connection and open it again."
+        )
+    elif result["received_bytes"] == 0:
         message = "No data echoed back -- check the device echoes input, wiring, and read_timeout_ms."
     elif result["clean"]:
         message = "Clean echo -- no dropped or corrupted bytes at this gap setting."

@@ -165,7 +165,7 @@ A plugin does not need a spec. A spec does not need a plugin. But when both exis
 
 ## Mirror: watch or share a connection with an external tool
 
-When the MCP server opens a serial port, it has exclusive access. No other tool can read from it. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
+When the MCP server opens a serial port, it locks the port (`exclusive`, default `true`). A second serial-mcp server cannot open it. No other tool sees the bytes that the server reads. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
 
 There are two transports: PTY, a virtual serial device file, and TCP, a plain network socket. Choose one with `SERIAL_MCP_MIRROR_TRANSPORT`.
 
@@ -204,7 +204,7 @@ Mirror on, TCP transport (all platforms):
 | **Platforms** | macOS/Linux only | All platforms, including Windows |
 | **Why the difference** | PTY needs `os.openpty()`. Windows has no equivalent function and no way to create a virtual COM port on its own. | A plain socket. It works the same on every platform. |
 | **Client sees** | A real device file (`/dev/ttys004`, or a stable symlink like `/tmp/serial-mcp0`) | A `host:port` to connect to (telnet, or any raw TCP client) |
-| **Reconnecting** | The client owns one PTY for the life of the mirror. If the mirror drops, most terminal apps do not notice when the device returns. They do not retry on their own. | Each new connection replaces the previous one. A simple poll-and-reconnect script, for example one that retries `connect()` until the port answers, gets a clean, working mirror every time. It needs no special handling. |
+| **Reconnecting** | The client owns one PTY for the life of the mirror. If the mirror drops, most terminal apps do not notice when the device returns. They do not retry on their own. | One client at a time. When the client disconnects, the mirror frees its place at once, so a simple poll-and-reconnect script, for example one that retries `connect()` until the port answers, gets a clean, working mirror every time. A second client gets a one-line "busy" notice and is closed; the first client keeps the mirror. |
 | **Use when** | An external tool needs a device file, for example `screen` or `minicom`. | Anything else. This includes watching a device from a different machine, or when you want a setup that reconnects easily. |
 
 ### Configuration

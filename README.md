@@ -368,7 +368,7 @@ claude mcp add serial \
 
 The PTY transport needs `os.openpty()`. macOS and Linux have this function; Windows does not, and has no way to create a virtual COM port on its own. If you set `SERIAL_MCP_MIRROR_TRANSPORT=pty` on Windows anyway, the server logs a warning and turns off the mirror.
 
-**The TCP transport works everywhere, Windows included.** Use it if you need mirroring on Windows. It also handles a dropped and reconnected client better than PTY: a new connection simply replaces the old one, so a plain poll-and-reconnect script gets a clean mirror every time, with nothing special to handle on the client side.
+**The TCP transport works everywhere, Windows included.** Use it if you need mirroring on Windows. It also handles a dropped and reconnected client better than PTY: when the client disconnects, the mirror frees its place at once, so a plain poll-and-reconnect script gets a clean mirror every time. The TCP mirror accepts one client at a time. A second client gets a one-line notice ("another client is already connected") and is closed. The first client keeps the mirror.
 
 ---
 

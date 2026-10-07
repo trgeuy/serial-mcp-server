@@ -41,6 +41,11 @@
 # and nothing else is normal until the machine runs. If it stays empty
 # while the machine runs, look for another watcher window that still holds
 # the mirror.
+#
+# serial-mcp's TCP mirror also accepts one watcher at a time. A second
+# watcher gets the line "another client is already connected", and its
+# connection ends. This script then tries again every second. If you see
+# that line repeat, close the other watcher window.
 
 $DefaultPort = 2424   # the port to watch when you give no port
 

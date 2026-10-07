@@ -89,6 +89,16 @@ class SerialState:
     def close_connection(self, connection_id: str) -> dict[str, Any]:
         """Close and remove a connection. Idempotent on already-closed ports."""
         conn = self.remove_connection(connection_id)
+        self.release(conn)
+        return {"connection_id": connection_id, "port": conn.port}
+
+    @staticmethod
+    def release(conn: SerialConnection) -> None:
+        """Stop the reader and close the port of an already-removed connection.
+
+        Blocking: stopping the reader waits for its thread (up to 3 s), so
+        async callers run this in a worker thread, not on the event loop.
+        """
         # Stop the background reader first (cleans up PTY if mirror is active).
         if conn.reader is not None:
             try:
@@ -100,7 +110,6 @@ class SerialState:
                 conn.ser.close()
         except Exception:
             pass
-        return {"connection_id": connection_id, "port": conn.port}
 
     async def shutdown(self) -> None:
         """Stop all readers and close all open serial ports."""
