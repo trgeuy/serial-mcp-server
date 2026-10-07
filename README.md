@@ -151,8 +151,15 @@ claude mcp add serial -e SERIAL_MCP_LOG_LEVEL=DEBUG -- serial_mcp
 
 This repo includes a Claude Code skill, `.claude/skills/serial-mcp/`. It tells the agent how
 to drive real hardware with these tools: how to send control bytes, how to pace a UART with
-no flow control, and when an old console is ready for the next command. Its
-`references/device-profiles.md` holds measured gaps and delays for specific machines.
+no flow control, and when an old console is ready for the next command. It works for any
+vintage machine with a serial console: it has a bring-up procedure for a machine or program
+nobody has measured yet, and a table that maps each kind of lost data to its cause.
+
+Measured gaps go in one pacing profile file for all your projects
+(`~/.config/serial-mcp/pacing-profiles.md`, or `%APPDATA%\serial-mcp\pacing-profiles.md` on
+Windows). The agent reads it before it types into a program and adds a row when it
+measures a new one. The skill defines the format. `references/pacing-examples.md` holds
+tested values for an Altair 8800c and a UCSD Pascal III system, as examples.
 
 The skill loads automatically when you run Claude Code in this repo. To use it in every
 project, copy the folder to `~/.claude/skills/serial-mcp/`.

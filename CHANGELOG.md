@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- `serial-mcp` skill, rewritten for any vintage machine, not only the two that were measured. New: a bring-up procedure for a machine or program with no measured values (line settings, line ending, echo, slow start, measure down); a "read the failure" table that maps each kind of damage to its cause and the gap to change; a rule that each program needs its own pacing, a rule to leave 20% headroom above the lowest passing gap, and a rule to keep your own list of measured gaps per machine and program. New warnings: do not set `newline` on `serial.open` (a typed `\r` is sent as text); `eol_gap_ms` comes only after the connection's newline; check `sent_text` in a `paced.calibrate` result, because a text newline gives a false "clean" result. The Altair and UCSD Pascal values are now marked as tested examples.
+- Pacing profiles: measured gaps now go in ONE user-level file for all projects, `~/.config/serial-mcp/pacing-profiles.md` (Windows: `%APPDATA%\serial-mcp\pacing-profiles.md`), outside the skill folder so a skill update cannot replace it. The skill defines a fixed table format (one section per machine: line end, gaps, wait, lowest pass / first fail, method, date) and tells the agent to read the file first, add a row after each measurement, and never fill a cell with a guess.
+- `references/device-profiles.md` is now `references/pacing-examples.md`, in the new format. Added for the Altair 8800c: MBASIC 5.21 program entry (the line gap grows with line length) and CP/M `PIP <file>=CON:` (no ready sign: a start wait before the first byte; no chunks needed for a 6 KB file). The "Wait ms" column covers a wait before the first byte as well as after a prompt. CCP char gap is now 5 ms (2 ms was the edge).
+
 ## 0.2.0
 
 First release of this fork (trgeuy/serial-mcp-server). Install it from the GitHub release, not from PyPI: the PyPI name `serial-mcp-server` is the upstream package, without these changes.
