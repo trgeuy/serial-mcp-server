@@ -67,17 +67,26 @@ Without Homebrew, or on Windows or Linux, use the `uv` installer: https://docs.a
 Register the MCP server with Claude Code. `uvx` downloads the release the first time it starts the server:
 
 ```bash
-claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.1/serial_mcp_server-0.2.1-py3-none-any.whl serial_mcp
+claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial_mcp_server-0.2.2-py3-none-any.whl serial_mcp
 ```
 
 If you already have Python 3.11 or newer, you can use pip instead:
 
 ```bash
-pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.1/serial_mcp_server-0.2.1-py3-none-any.whl
+pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial_mcp_server-0.2.2-py3-none-any.whl
 claude mcp add serial -- serial_mcp
 ```
 
 Do not install `serial-mcp-server` from PyPI. That name is the upstream package, without the changes in this fork.
+
+Install the `serial-mcp` skill. It tells the agent how to drive old hardware: control bytes, pacing, and when a console is ready. The skill is not in the wheel. Each release has it as `serial-mcp-skill.zip`. These commands install it for all your projects:
+
+```bash
+curl -LO https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial-mcp-skill.zip
+unzip -o serial-mcp-skill.zip -d ~/.claude/skills/
+```
+
+On Windows, download `serial-mcp-skill.zip` from the release page. Then, in PowerShell: `Expand-Archive serial-mcp-skill.zip -DestinationPath $HOME\.claude\skills -Force`. To update the skill later, do the same with the zip from the new release. Start a new Claude Code session to load it.
 
 Then in Claude Code, try:
 
@@ -162,7 +171,7 @@ measures a new one. The skill defines the format. `references/pacing-examples.md
 tested values for an Altair 8800c and a UCSD Pascal III system, as examples.
 
 The skill loads automatically when you run Claude Code in this repo. To use it in every
-project, copy the folder to `~/.claude/skills/serial-mcp/`.
+project, install `serial-mcp-skill.zip` from the release (see the Quickstart).
 
 ## Add to VS Code / Copilot
 

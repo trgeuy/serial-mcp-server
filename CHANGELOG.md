@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+Release packaging: the skill comes with each release. No change to the server code or the skill.
+
+### Added
+- `serial-mcp-skill.zip` on each GitHub release, next to the wheel. The zip unpacks to `serial-mcp/`. `unzip -o serial-mcp-skill.zip -d ~/.claude/skills/` installs the skill for all projects. The README Quickstart now has this step. Before, you had to copy `.claude/skills/serial-mcp/` from the source archive.
+
 ## 0.2.1
 
 Documentation release: the `serial-mcp` skill and its pacing data. No change to the server code.
