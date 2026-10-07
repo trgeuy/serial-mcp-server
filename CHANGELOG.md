@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
+
+Documentation release: the `serial-mcp` skill and its pacing data. No change to the server code.
 
 ### Changed
 - `serial-mcp` skill, rewritten for any vintage machine, not only the two that were measured. New: a bring-up procedure for a machine or program with no measured values (line settings, line ending, echo, slow start, measure down); a "read the failure" table that maps each kind of damage to its cause and the gap to change; a rule that each program needs its own pacing, a rule to leave 20% headroom above the lowest passing gap, and a rule to keep your own list of measured gaps per machine and program. New warnings: do not set `newline` on `serial.open` (a typed `\r` is sent as text); `eol_gap_ms` comes only after the connection's newline; check `sent_text` in a `paced.calibrate` result, because a text newline gives a false "clean" result. The Altair and UCSD Pascal values are now marked as tested examples.

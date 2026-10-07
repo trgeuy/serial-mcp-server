@@ -67,13 +67,13 @@ Without Homebrew, or on Windows or Linux, use the `uv` installer: https://docs.a
 Register the MCP server with Claude Code. `uvx` downloads the release the first time it starts the server:
 
 ```bash
-claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.0/serial_mcp_server-0.2.0-py3-none-any.whl serial_mcp
+claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.1/serial_mcp_server-0.2.1-py3-none-any.whl serial_mcp
 ```
 
 If you already have Python 3.11 or newer, you can use pip instead:
 
 ```bash
-pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.0/serial_mcp_server-0.2.0-py3-none-any.whl
+pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.1/serial_mcp_server-0.2.1-py3-none-any.whl
 claude mcp add serial -- serial_mcp
 ```
 
