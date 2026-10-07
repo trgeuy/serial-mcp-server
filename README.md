@@ -64,17 +64,30 @@ brew install uv
 
 Without Homebrew, or on Windows or Linux, use the `uv` installer: https://docs.astral.sh/uv/getting-started/installation/
 
-Register the MCP server with Claude Code. `uvx` downloads the release the first time it starts the server:
+Install the server from the newest release. `uv tool install` gives it its own Python and installs two commands: `serial_mcp` (the server, which Claude Code starts) and `serial-watch` (a window to watch the device's console, see [Watching with `serial-watch`](#watching-with-serial-watch)):
 
 ```bash
-claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial_mcp_server-0.2.3-py3-none-any.whl serial_mcp
+uv tool install "serial-mcp-server @ https://github.com/trgeuy/serial-mcp-server/releases/latest/download/serial-mcp-server.tar.gz"
 ```
 
-If you already have Python 3.11 or newer, you can use pip instead:
+The link always points to the newest release, so this command never goes out of date. `uv` builds the package from that release's source the first time, which takes a few seconds.
+
+`uv` puts the commands in its tools folder (`~/.local/bin` on macOS and Linux) and tells you if that folder is not on your PATH (`uv tool update-shell` adds it).
+
+Register the MCP server with Claude Code. `--scope user` makes it available in every project on this computer. The three settings turn on the read-only console mirror over TCP and paced writes:
 
 ```bash
-pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial_mcp_server-0.2.3-py3-none-any.whl
-claude mcp add serial -- serial_mcp
+claude mcp add --scope user serial \
+  -e SERIAL_MCP_MIRROR=ro \
+  -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
+  -e SERIAL_MCP_PACED=1 \
+  -- serial_mcp
+```
+
+If you already have Python 3.11 or newer, you can use pip in place of `uv tool install`:
+
+```bash
+pip install "serial-mcp-server @ https://github.com/trgeuy/serial-mcp-server/releases/latest/download/serial-mcp-server.tar.gz"
 ```
 
 Do not install `serial-mcp-server` from PyPI. That name is the upstream package, without the changes in this fork.
@@ -82,8 +95,8 @@ Do not install `serial-mcp-server` from PyPI. That name is the upstream package,
 Install the `serial-mcp` skill. It tells the agent how to drive old hardware: control bytes, pacing, and when a console is ready. The skill is not in the wheel. Each release has it as `serial-mcp-skill.zip`. These commands install it for all your projects:
 
 ```bash
-curl -LO https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial-mcp-skill.zip
-unzip -o serial-mcp-skill.zip -d ~/.claude/skills/
+curl -LO https://github.com/trgeuy/serial-mcp-server/releases/latest/download/serial-mcp-skill.zip
+unzip -o serial-mcp-skill.zip -d ~/.claude/skills
 ```
 
 On Windows, download `serial-mcp-skill.zip` from the release page. Then, in PowerShell: `Expand-Archive serial-mcp-skill.zip -DestinationPath $HOME\.claude\skills -Force`. To update the skill later, do the same with the zip from the new release. Start a new Claude Code session to load it.
@@ -350,26 +363,25 @@ The response reports the actual bound host and port:
 
 It defaults to a fixed port, `2424`, so client scripts can hardcode it. If you mirror more than one connection at once, a fixed port will not work — only one connection can bind it at a time. Set `SERIAL_MCP_MIRROR_TCP_PORT=0` instead, so the OS picks a free port per connection, and read the actual port back from each connection's response.
 
-In another terminal, watch it with the `mirror-watch` script (next section), or with any raw TCP client.
+In another terminal, watch it with `serial-watch` (next section), or with any raw TCP client.
 
-### Watching with `mirror-watch`
+### Watching with `serial-watch`
 
-`examples/mirror-watch/` has a watch script for each platform: `mirror-watch.sh` for macOS and Linux (bash only), and `mirror-watch.ps1` for Windows (PowerShell only). Neither needs `telnet` or `nc`. The script waits for the mirror, shows its output, and connects again on its own when the mirror drops (a server restart, or a new client taking its place). So you can leave a window watching for a full working session.
+`serial-watch` comes with the package (see the Quickstart). It watches the TCP mirror in a terminal window while the agent drives the device, on macOS, Linux and Windows. It needs no `telnet` or `nc`. It waits for the mirror, shows its output, and connects again on its own when the mirror drops (the agent closed the port, the server restarted, or a new client took its place). So you can leave a window watching for a full working session.
 
 ```bash
-./examples/mirror-watch/mirror-watch.sh            # localhost:2424, this server's default
-./examples/mirror-watch/mirror-watch.sh 54321      # another port on localhost
+serial-watch                 # localhost:2424, this server's default
+serial-watch 54321           # another port on localhost
+serial-watch 10.0.0.2 2424   # a mirror on another computer
 ```
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\examples\mirror-watch\mirror-watch.ps1
-```
+Press Ctrl-C to stop watching. It only watches: it does not send what you type. To type into the device through an `rw` mirror, use a full terminal emulator, or `telnet` with the setting in the next section. Leave that setting off when you use `serial-watch`, because it shows the negotiation bytes as junk.
 
-Windows does not run script files by default. `-ExecutionPolicy Bypass` runs this one, one time. To run scripts directly from now on, see [Running a script on Windows](examples/mirror-watch/README.md#running-a-script-on-windows).
+The server's TCP mirror accepts one watcher at a time. A second watcher gets the line "another client is already connected", and its connection ends; `serial-watch` then tries again every second. If you see that line repeat, close the other watcher. If you mirror more than one connection at once (`SERIAL_MCP_MIRROR_TCP_PORT=0`), give each `serial-watch` the port from that connection's `serial.open` response.
 
-The scripts only watch: they do not send what you type. To type into the device through an `rw` mirror, use a full terminal emulator, or `telnet` with the setting in the next section. Leave that setting off when you use `mirror-watch`, because the scripts show its negotiation bytes as junk.
+Tested on macOS. Windows and Linux are not tested yet: please open an issue if it does not work there.
 
-See [examples/mirror-watch/README.md](examples/mirror-watch/README.md) for all arguments, the `SERIAL_MCP_MIRROR_TCP_PORT=0` case, and what happens with two watch windows.
+`serial-watch` replaces the `examples/mirror-watch/` scripts of earlier releases of this fork. altairsim ships its own `tools/mirror-watch.sh` for its machine mirror (port 2323); that script is separate and unchanged.
 
 ### Telnet double-echo
 

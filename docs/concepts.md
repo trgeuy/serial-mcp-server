@@ -235,7 +235,7 @@ Two related pieces, both driven by the same setting:
 - **Outgoing device data**: if a byte value `0xFF` (the telnet `IAC` byte) ever appears in real device output, it is escaped as `IAC IAC` before being sent to the client. Otherwise a real telnet client's own parser would misread that single byte as the start of a command and eat it.
 - **Incoming client data**: any telnet command bytes the client sends (negotiation replies, or anything else wrapped in `IAC`) are stripped out before the rest reaches `_forward_or_drop`. Only real keystrokes ever reach the serial port.
 
-Turn this on only when the client is a real telnet program. A plain socket tool (`nc`, a test script, the `mirror-watch` scripts in `examples/mirror-watch/`) does not speak the telnet protocol, does not expect these extra bytes, and does not need this setting.
+Turn this on only when the client is a real telnet program. A plain socket tool (`nc`, a test script, `serial-watch`) does not speak the telnet protocol, does not expect these extra bytes, and does not need this setting.
 
 ### Platform
 

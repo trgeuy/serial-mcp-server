@@ -37,6 +37,7 @@ Changelog = "https://github.com/trgeuy/serial-mcp-server/blob/main/CHANGELOG.md"
 
 [project.scripts]
 serial_mcp = "serial_mcp_server.server:main"
+serial-watch = "serial_mcp_server.serial_watch:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

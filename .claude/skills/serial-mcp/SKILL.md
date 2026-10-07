@@ -200,8 +200,9 @@ The kind of damage tells you which gap to change.
 ## 9. The mirror
 
 `serial.open` returns mirror details: a PTY path such as `/tmp/serial-mcp0`, or a TCP
-port such as `127.0.0.1:2424`. A person can watch with `nc 127.0.0.1 2424` or a terminal
-on the PTY.
+port such as `127.0.0.1:2424`. A person watches the TCP mirror with `serial-watch` (installed
+with the server; `serial-watch PORT` for another port), or a PTY mirror with a terminal program
+such as `screen /tmp/serial-mcp0`.
 
 - **Use `SERIAL_MCP_MIRROR=ro` when the agent drives.** In `rw` mode, anything the
   watcher's terminal sends goes straight to the device, mixed into your commands. This

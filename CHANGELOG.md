@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.4
+
+### Added
+- `serial-watch` command, installed with the package next to `serial_mcp`. It watches the TCP mirror in a terminal window while the agent drives the device: it waits for the mirror, shows the device's bytes as they arrive, and connects again when the mirror drops. It runs on macOS, Linux and Windows (on Windows it also turns on the console's escape-sequence handling). Usage: `serial-watch` (localhost:2424), `serial-watch PORT`, `serial-watch HOST PORT`. It prints the same messages as the old scripts. Tested on macOS; Windows and Linux are not tested yet.
+
+### Changed
+- Each release also has `serial-mcp-server.tar.gz`: the source package under a name that does not change. With GitHub's `releases/latest/download/` link, `uv tool install "serial-mcp-server @ <that link>"` always installs the newest release, and the skill's `curl` link does the same. The install commands in the README no longer name a version.
+- README Quickstart: install with `uv tool install`, then register `-- serial_mcp` at user scope with the mirror (`ro`, TCP) and paced writes on. Before, the registration ran `uvx --from <wheel URL> serial_mcp`, which put the whole URL on every `claude mcp list` line.
+- The `serial-mcp` skill tells the agent to suggest `serial-watch` for the TCP mirror, in place of `nc`.
+
+### Removed
+- `examples/mirror-watch/` (`mirror-watch.sh`, `mirror-watch.ps1`): replaced by `serial-watch`. The name changed so it is not confused with altairsim's own `tools/mirror-watch.sh`, which watches altairsim's machine mirror (port 2323) and is separate and unchanged. `serial-watch` takes only a port or a host and port; it has no `altairsim` or `serial` name argument.
+
 ## 0.2.3
 
 ### Fixed
