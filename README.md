@@ -56,15 +56,28 @@ The agent calls these tools and gets structured JSON back. It reasons about what
 
 ## Quickstart (Claude Code)
 
+The server needs Python 3.11 or newer. The Python that comes with macOS is 3.9, which is too old. `uv` gets a suitable Python for you, so install `uv` first:
+
 ```bash
-pip install git+https://github.com/trgeuy/serial-mcp-server.git
+brew install uv
 ```
 
-Register the MCP server with Claude Code:
+Without Homebrew, or on Windows or Linux, use the `uv` installer: https://docs.astral.sh/uv/getting-started/installation/
+
+Register the MCP server with Claude Code. `uvx` downloads the release the first time it starts the server:
 
 ```bash
+claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.0/serial_mcp_server-0.2.0-py3-none-any.whl serial_mcp
+```
+
+If you already have Python 3.11 or newer, you can use pip instead:
+
+```bash
+pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.0/serial_mcp_server-0.2.0-py3-none-any.whl
 claude mcp add serial -- serial_mcp
 ```
+
+Do not install `serial-mcp-server` from PyPI. That name is the upstream package, without the changes in this fork.
 
 Then in Claude Code, try:
 

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+First release of this fork (trgeuy/serial-mcp-server). Install it from the GitHub release, not from PyPI: the PyPI name `serial-mcp-server` is the upstream package, without these changes.
 
 ### Added
 - Exclusive-forwarding pause/resume for `rw`-mode mirrors: `MirrorSession`/`TcpMirrorSession` can pause external-tool-to-serial forwarding for the duration of a multi-call agent command sequence, always auto-expiring even if never explicitly resumed. Dropped bytes are counted (`dropped_while_paused`), not buffered and replayed.
