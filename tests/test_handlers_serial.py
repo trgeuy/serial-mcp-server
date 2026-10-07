@@ -10,6 +10,7 @@ from serial_mcp_server.handlers_serial import (
     HANDLERS,
     TOOLS,
     _format_data,
+    _set_tty_exclusive,
     handle_close,
     handle_connection_status,
     handle_flush,
@@ -400,6 +401,44 @@ class TestOpenResourceCleanup:
                 assert ctor.call_args.kwargs["exclusive"] is False
             else:
                 assert "exclusive" not in ctor.call_args.kwargs
+
+    async def test_open_sets_tty_exclusive_only_when_exclusive(self):
+        """exclusive=True also sets TIOCEXCL; exclusive=False leaves the port shareable."""
+        state = SerialState()
+        mock_ser = MagicMock()
+        mock_ser.is_open = True
+        mock_reader = MagicMock()
+        mock_reader.mirror_info.return_value = None
+        with (
+            patch("serial_mcp_server.handlers_serial.pyserial.Serial", return_value=mock_ser),
+            patch("serial_mcp_server.handlers_serial.create_reader", return_value=mock_reader),
+            patch("serial_mcp_server.handlers_serial._set_tty_exclusive") as excl,
+        ):
+            await handle_open(state, {"port": "/dev/ttyUSB0"})
+            excl.assert_called_once_with(mock_ser, "/dev/ttyUSB0")
+            excl.reset_mock()
+            await handle_open(state, {"port": "/dev/ttyUSB1", "exclusive": False})
+            excl.assert_not_called()
+
+    @pytest.mark.skipif(__import__("sys").platform == "win32", reason="TIOCEXCL is POSIX only")
+    def test_tty_exclusive_sets_tiocexcl_on_the_fd(self):
+        """The ioctl goes to the port's own fd. (Checked live on an FTDI port: a second open() then
+        fails with EBUSY. A macOS pty ignores TIOCEXCL, so a pty cannot stand in for the port here.)"""
+        import termios
+
+        with patch("fcntl.ioctl") as ioctl:
+            assert _set_tty_exclusive(MagicMock(fd=7), "/dev/ttyUSB0") is True
+        ioctl.assert_called_once_with(7, termios.TIOCEXCL)
+
+    @pytest.mark.skipif(__import__("sys").platform == "win32", reason="TIOCEXCL is POSIX only")
+    def test_tty_exclusive_refused_is_only_a_warning(self):
+        """A device that refuses TIOCEXCL still opens; only the advisory lock applies then."""
+        with patch("fcntl.ioctl", side_effect=OSError(25, "Inappropriate ioctl for device")):
+            assert _set_tty_exclusive(MagicMock(fd=7), "/dev/ttyUSB0") is False
+
+    def test_tty_exclusive_skips_a_port_without_a_real_fd(self):
+        """A port object with no integer fd (a mock, a URL handler) is left alone, not an error."""
+        assert _set_tty_exclusive(MagicMock(), "/dev/ttyUSB0") is False
 
     async def test_open_closes_port_when_mirror_cannot_start(self):
         """A mirror that cannot start (e.g. its TCP port is busy) must not leave the serial port open."""

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+### Fixed
+- `exclusive` (the default) now keeps every other program off the port on macOS and Linux. Before, it was only an advisory `flock()` lock: `screen` or `minicom` opened on the port by mistake got the port too. On the real Altair 8800c, `DIR` then gave the server 1 byte and `screen` the other 551, with no error. When `screen` quit, the server's connection broke (`Input/output error`). Now the server sets `TIOCEXCL` after it opens the port, and the kernel refuses every other open with "Resource busy" until the server closes the port. If a device refuses `TIOCEXCL`, the server logs a warning and keeps the advisory lock. A pseudo-terminal on macOS ignores `TIOCEXCL`, so the lock does not cover a pty.
+
 ## 0.2.2
 
 Release packaging: the skill comes with each release. No change to the server code or the skill.

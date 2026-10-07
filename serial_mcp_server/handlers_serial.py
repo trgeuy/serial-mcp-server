@@ -156,10 +156,10 @@ TOOLS: list[Tool] = [
                     "type": ["boolean", "string"],
                     "default": True,
                     "description": (
-                        "Lock the port so a second program that also asks for exclusive access "
-                        "(e.g. another serial-mcp server) cannot open it (default true). On macOS/Linux "
-                        "this is an advisory lock: tools that do not ask for one (screen, minicom) are "
-                        "not stopped. Windows always opens ports exclusively."
+                        "Lock the port so no other program can open it while this connection is open "
+                        "(default true). On macOS/Linux the kernel then refuses a second open (for "
+                        "example screen or minicom on the same device) with 'Resource busy'. Windows "
+                        "always opens ports exclusively. Set false only to share the port on purpose."
                     ),
                 },
                 "encoding": {
@@ -452,6 +452,30 @@ async def handle_list_ports(state: SerialState, args: dict[str, Any]) -> dict[st
     )
 
 
+def _set_tty_exclusive(ser: Any, port: str) -> bool:
+    """Make the kernel refuse every other open() of the port (macOS/Linux).
+
+    pyserial's ``exclusive`` is only an flock() lock. Programs that do not ask
+    for one (screen, minicom) still open the port, and then each program gets
+    only part of the incoming bytes, with no error. TIOCEXCL makes a second
+    open() fail with EBUSY until this server closes the port.
+    """
+    if sys.platform == "win32":
+        return False  # Windows always opens ports exclusively
+    fd = getattr(ser, "fd", None)
+    if not isinstance(fd, int):
+        return False
+    import fcntl
+    import termios
+
+    try:
+        fcntl.ioctl(fd, termios.TIOCEXCL)
+    except OSError as exc:
+        logger.warning("Could not set TIOCEXCL on %s (%s); only the advisory lock applies.", port, exc)
+        return False
+    return True
+
+
 async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any]:
     port = args["port"]
     baudrate = int(args.get("baudrate", 115200))
@@ -460,9 +484,10 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
     stopbits = float(args.get("stopbits", 1))
     timeout_ms = int(args.get("timeout_ms", 200))
     write_timeout_ms = int(args.get("write_timeout_ms", 200))
-    # Default: exclusive. Without the lock, a second serial-mcp process (for
-    # example a second agent session) can open the same device, and each
-    # process then gets only part of the incoming bytes, with no error.
+    # Default: exclusive. Without the lock, a second program (another
+    # serial-mcp process, or screen opened on the port by mistake) can open
+    # the same device, and each then gets only part of the incoming bytes,
+    # with no error.
     exclusive = _coerce_bool(args["exclusive"]) if "exclusive" in args else True
     encoding = args.get("encoding", "utf-8")
     newline = args.get("newline", "\r\n")
@@ -501,6 +526,8 @@ async def handle_open(state: SerialState, args: dict[str, Any]) -> dict[str, Any
         kwargs["exclusive"] = exclusive  # win32 rejects exclusive=False (always exclusive there)
 
     ser = await asyncio.to_thread(pyserial.Serial, **kwargs)
+    if exclusive:
+        _set_tty_exclusive(ser, port)
 
     connection_id = state.generate_id()
     buf = SerialBuffer()

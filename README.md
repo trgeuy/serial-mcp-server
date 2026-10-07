@@ -67,13 +67,13 @@ Without Homebrew, or on Windows or Linux, use the `uv` installer: https://docs.a
 Register the MCP server with Claude Code. `uvx` downloads the release the first time it starts the server:
 
 ```bash
-claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial_mcp_server-0.2.2-py3-none-any.whl serial_mcp
+claude mcp add serial -- uvx --from https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial_mcp_server-0.2.3-py3-none-any.whl serial_mcp
 ```
 
 If you already have Python 3.11 or newer, you can use pip instead:
 
 ```bash
-pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial_mcp_server-0.2.2-py3-none-any.whl
+pip install https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial_mcp_server-0.2.3-py3-none-any.whl
 claude mcp add serial -- serial_mcp
 ```
 
@@ -82,7 +82,7 @@ Do not install `serial-mcp-server` from PyPI. That name is the upstream package,
 Install the `serial-mcp` skill. It tells the agent how to drive old hardware: control bytes, pacing, and when a console is ready. The skill is not in the wheel. Each release has it as `serial-mcp-skill.zip`. These commands install it for all your projects:
 
 ```bash
-curl -LO https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.2/serial-mcp-skill.zip
+curl -LO https://github.com/trgeuy/serial-mcp-server/releases/download/v0.2.3/serial-mcp-skill.zip
 unzip -o serial-mcp-skill.zip -d ~/.claude/skills/
 ```
 

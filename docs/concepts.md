@@ -165,7 +165,7 @@ A plugin does not need a spec. A spec does not need a plugin. But when both exis
 
 ## Mirror: watch or share a connection with an external tool
 
-When the MCP server opens a serial port, it locks the port (`exclusive`, default `true`). A second serial-mcp server cannot open it. No other tool sees the bytes that the server reads. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
+When the MCP server opens a serial port, it locks the port (`exclusive`, default `true`). No other program can open it: not a second serial-mcp server, and not `screen` or `minicom`. No other tool sees the bytes that the server reads. Mirroring solves this. It creates a second, external-facing copy of the same byte stream. An external tool connects to that copy and sees exactly what the server sees.
 
 There are two transports: PTY, a virtual serial device file, and TCP, a plain network socket. Choose one with `SERIAL_MCP_MIRROR_TRANSPORT`.
 

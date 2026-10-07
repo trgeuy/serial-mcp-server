@@ -59,7 +59,7 @@ Open a serial port connection. It returns a `connection_id` for use with other t
 
 Only `port` is required. All other parameters have defaults.
 
-`exclusive` (default `true`) locks the port, so a second program that also asks for exclusive access cannot open it. An example is a second serial-mcp server in another agent session. Without the lock, both servers read from the device, and each gets only part of the bytes. On macOS and Linux this is an advisory lock: tools that do not ask for one, such as `screen` or `minicom`, can still open the port. Windows always opens a port exclusively. If the port is locked, `serial.open` fails with an `io_error` that says "Could not exclusively lock port".
+`exclusive` (default `true`) locks the port, so no other program can open it while the connection is open. Without the lock, two programs read from the device, and each gets only part of the bytes, with no error. Examples: a second serial-mcp server in another agent session, or `screen` opened on the port by mistake. On macOS and Linux the server sets `TIOCEXCL` on the port, so the kernel refuses every other open with "Resource busy". If a device refuses `TIOCEXCL`, the server logs a warning and only an advisory lock applies. A pseudo-terminal on macOS ignores `TIOCEXCL`. Windows always opens a port exclusively. If another program holds the port, `serial.open` fails with an `io_error` that says "Resource busy" or "Could not exclusively lock port". Set `exclusive` to `false` only to share the port on purpose.
 
 If the mirror cannot start (for example, the TCP mirror port is in use), `serial.open` closes the port again and returns the error `mirror_unavailable`.
 
