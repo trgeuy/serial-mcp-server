@@ -17,26 +17,36 @@ logger = logging.getLogger("serial_mcp_server")
 
 MAX_CONNECTIONS = int(os.environ.get("SERIAL_MCP_MAX_CONNECTIONS", "10"))
 
-# PTY mirror: "off" (default), "ro" (read-only), or "rw" (read-write).
-MIRROR_PTY = os.environ.get("SERIAL_MCP_MIRROR", "off").strip().lower()
-if MIRROR_PTY not in ("off", "ro", "rw"):
-    logger.warning("Invalid SERIAL_MCP_MIRROR=%r, defaulting to 'off'.", MIRROR_PTY)
-    MIRROR_PTY = "off"
-if MIRROR_PTY != "off" and os.name == "nt":
-    logger.warning("PTY mirror is not supported on Windows. Ignoring SERIAL_MCP_MIRROR=%r.", MIRROR_PTY)
-    MIRROR_PTY = "off"
-MIRROR_PTY_LINK: str | None = os.environ.get("SERIAL_MCP_MIRROR_LINK", "").strip() or None
-if MIRROR_PTY != "off" and MIRROR_PTY_LINK is None:
-    MIRROR_PTY_LINK = "/tmp/serial-mcp"  # noqa: S108  # nosec B108 — intentional default, user-overridable via SERIAL_MCP_MIRROR_LINK
-
 # Mirror transport: "pty" (default, Unix-only device-file semantics) or
 # "tcp" (cross-platform; a plain socket, read by raw TCP clients like
-# examples/mirror-watch/, or by telnet). Loopback-only by default -- same opt-in security
+# serial-watch, or by telnet). Loopback-only by default -- same opt-in security
 # posture as the mirror feature itself; set MIRROR_TCP_HOST to widen it.
 MIRROR_TRANSPORT = os.environ.get("SERIAL_MCP_MIRROR_TRANSPORT", "pty").strip().lower()
 if MIRROR_TRANSPORT not in ("pty", "tcp"):
     logger.warning("Invalid SERIAL_MCP_MIRROR_TRANSPORT=%r, defaulting to 'pty'.", MIRROR_TRANSPORT)
     MIRROR_TRANSPORT = "pty"
+
+
+def mirror_unsupported(mode: str, transport: str, is_windows: bool) -> bool:
+    """True if this mirror cannot run here: the PTY transport needs a Unix pseudo-terminal. TCP runs everywhere."""
+    return mode != "off" and transport == "pty" and is_windows
+
+
+# Mirror mode (both transports): "off" (default), "ro" (read-only), or "rw" (read-write).
+MIRROR_PTY = os.environ.get("SERIAL_MCP_MIRROR", "off").strip().lower()
+if MIRROR_PTY not in ("off", "ro", "rw"):
+    logger.warning("Invalid SERIAL_MCP_MIRROR=%r, defaulting to 'off'.", MIRROR_PTY)
+    MIRROR_PTY = "off"
+if mirror_unsupported(MIRROR_PTY, MIRROR_TRANSPORT, os.name == "nt"):
+    logger.warning(
+        "The PTY mirror is not supported on Windows. Ignoring SERIAL_MCP_MIRROR=%r. "
+        "Set SERIAL_MCP_MIRROR_TRANSPORT=tcp to mirror on Windows.",
+        MIRROR_PTY,
+    )
+    MIRROR_PTY = "off"
+MIRROR_PTY_LINK: str | None = os.environ.get("SERIAL_MCP_MIRROR_LINK", "").strip() or None
+if MIRROR_PTY != "off" and MIRROR_PTY_LINK is None:
+    MIRROR_PTY_LINK = "/tmp/serial-mcp"  # noqa: S108  # nosec B108 — intentional default, user-overridable via SERIAL_MCP_MIRROR_LINK
 MIRROR_TCP_HOST = os.environ.get("SERIAL_MCP_MIRROR_TCP_HOST", "127.0.0.1").strip()
 try:
     # Default 2424: a fixed, memorable port so client scripts (e.g.
