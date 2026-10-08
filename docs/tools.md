@@ -416,7 +416,7 @@ Returns `{ "ok": true, "name": "gps", "tools": ["gps.get_position"], "notified":
 
 ## Paced Writes
 
-These tools pace writes to slow or interrupt-driven UARTs. They calibrate gap sizes by testing them, and they can pause an `rw`-mode mirror's forwarding during a multi-call command sequence. These tools are built in, not a plugin. Set `SERIAL_MCP_PACED=1` to turn on all six tools below. Leave it unset, or set it to `0`, to turn them off.
+These tools pace writes to slow or interrupt-driven UARTs. They calibrate gap sizes by testing them, and they can pause an `rw`-mode mirror's forwarding during a multi-call command sequence. These tools are built in, not a plugin, and on by default. Set `SERIAL_MCP_PACED=0` to turn off all six tools below.
 
 ### paced.configure
 

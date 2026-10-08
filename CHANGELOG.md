@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+### Changed
+- The pacing tools (`paced.*`) are now ON by default. Before, they needed `SERIAL_MCP_PACED=1`. This fork is for vintage machines, and its `serial-mcp` skill depends on these tools; without the setting, the agent did not have them. Registered tools do nothing until the agent uses them. Set `SERIAL_MCP_PACED=0` to turn them off. A registration that already sets `SERIAL_MCP_PACED=1` keeps working.
+- README: the registration no longer sets `SERIAL_MCP_PACED=1`.
+
 ## 0.2.4
 
 ### Added

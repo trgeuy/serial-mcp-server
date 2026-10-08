@@ -65,10 +65,10 @@ MIRROR_TCP_TELNET = os.environ.get("SERIAL_MCP_MIRROR_TCP_TELNET", "0").strip().
 )
 
 # Paced writes + gap calibration + exclusive-forwarding tools (handlers_paced).
-# Off by default, same opt-in convention as the mirror feature -- not every
-# device needs pacing, so it isn't unconditionally registered like the core
-# serial/introspection tools are.
-PACED_ENABLED = os.environ.get("SERIAL_MCP_PACED", "0").strip().lower() not in ("0", "false", "no", "")
+# ON by default since 0.2.5: this fork is for vintage machines, and its skill
+# depends on the paced.* tools. Registered tools do nothing until the agent
+# uses them. SERIAL_MCP_PACED=0 (or false/no/empty) turns them off.
+PACED_ENABLED = os.environ.get("SERIAL_MCP_PACED", "1").strip().lower() not in ("0", "false", "no", "")
 
 # ---------------------------------------------------------------------------
 # Response builders

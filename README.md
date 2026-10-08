@@ -74,13 +74,12 @@ The link always points to the newest release, so this command never goes out of 
 
 `uv` puts the commands in its tools folder (`~/.local/bin` on macOS and Linux) and tells you if that folder is not on your PATH (`uv tool update-shell` adds it).
 
-Register the MCP server with Claude Code. `--scope user` makes it available in every project on this computer. The three settings turn on the read-only console mirror over TCP and paced writes:
+Register the MCP server with Claude Code. `--scope user` makes it available in every project on this computer. The two settings turn on the read-only console mirror over TCP. The pacing tools (`paced.*`) are on by default:
 
 ```bash
 claude mcp add --scope user serial \
   -e SERIAL_MCP_MIRROR=ro \
   -e SERIAL_MCP_MIRROR_TRANSPORT=tcp \
-  -e SERIAL_MCP_PACED=1 \
   -- serial_mcp
 ```
 
@@ -209,7 +208,7 @@ Adjust `env` to match your needs:
 
 - Set `SERIAL_MCP_PLUGINS` to specific plugin names.
 - Add `SERIAL_MCP_MIRROR` for mirroring. On Windows, also add `SERIAL_MCP_MIRROR_TRANSPORT=tcp`.
-- Add `SERIAL_MCP_PACED=1` for the pacing tools.
+- The pacing tools are on by default. Add `SERIAL_MCP_PACED=0` to turn them off.
 
 ## Add to Cursor
 
@@ -242,7 +241,7 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 | `SERIAL_MCP_MIRROR_TCP_HOST` | `127.0.0.1` | TCP transport only. This is the bind address for the mirror socket. |
 | `SERIAL_MCP_MIRROR_TCP_PORT` | `2424` | TCP transport only. This is the bind port. Set it to `0` to let the OS pick a free port instead. `serial.open`'s response reports the actual port either way. Use `0` if you mirror more than one connection at once: a fixed port can bind to only one connection's mirror at a time. |
 | `SERIAL_MCP_MIRROR_TCP_TELNET` | `0` | TCP transport only. Set to `1` to negotiate telnet echo handling and fix double-echo in a real telnet client. Leave off for plain socket clients (`nc`, test scripts). |
-| `SERIAL_MCP_PACED` | disabled | Turns on the paced-write, gap-calibration, and exclusive-forwarding tools (`paced.*`). Set to `1` to turn them on. |
+| `SERIAL_MCP_PACED` | `1` (on) | Turns on the paced-write, gap-calibration, and exclusive-forwarding tools (`paced.*`). Set to `0` to turn them off. |
 | `SERIAL_MCP_LOG_LEVEL` | `WARNING` | The Python log level (`DEBUG`, `INFO`, `WARNING`, or `ERROR`). Logs go to stderr. |
 | `SERIAL_MCP_TRACE` | enabled | JSONL tracing of every tool call. Set to `0`, `false`, or `no` to disable. |
 | `SERIAL_MCP_TRACE_PAYLOADS` | disabled | Adds write `data` to the traced arguments. By default, this data is removed. |
@@ -260,7 +259,7 @@ Add to your project's `.cursor/mcp.json` (or create it). Cursor does not support
 | **Protocol Specs** | `serial.spec.template`, `serial.spec.register`, `serial.spec.list`, `serial.spec.attach`, `serial.spec.get`, `serial.spec.read`, `serial.spec.search` |
 | **Tracing** | `serial.trace.status`, `serial.trace.tail` |
 | **Plugins** | `serial.plugin.template`, `serial.plugin.list`, `serial.plugin.reload`, `serial.plugin.load` |
-| **Paced Writes** (`SERIAL_MCP_PACED=1`) | `paced.configure`, `paced.write`, `paced.calibrate`, `paced.sweep`, `paced.exclusive_begin`, `paced.exclusive_end` |
+| **Paced Writes** (on by default; `SERIAL_MCP_PACED=0` turns them off) | `paced.configure`, `paced.write`, `paced.calibrate`, `paced.sweep`, `paced.exclusive_begin`, `paced.exclusive_end` |
 
 ---
 

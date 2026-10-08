@@ -13,10 +13,8 @@ setting, read back whatever the external system echoes, and diff sent vs.
 received to report dropped/corrupted bytes -- so gaps can be tuned
 empirically instead of guessed.
 
-Built in, opt-in via SERIAL_MCP_PACED=1 (default off) -- same convention as
-the mirror feature's SERIAL_MCP_MIRROR. Not everyone's device needs pacing,
-so it's not unconditionally registered the way the core serial/introspection
-tools are.
+Built in, and ON by default since 0.2.5 (this fork is for vintage machines,
+and its skill depends on these tools). SERIAL_MCP_PACED=0 turns them off.
 
 Also adds exclusive-forwarding controls for rw-mode mirrors (PTY or TCP): a
 human attached to the mirror can type freely most of the time, but a
