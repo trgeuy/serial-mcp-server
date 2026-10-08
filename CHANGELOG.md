@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+### Fixed
+- The server no longer stops at startup when it cannot write its trace file. The trace file goes into `.serial_mcp/traces/` in the project folder, or in the folder where the server starts. When that folder is not writable, the server exited before it answered the MCP client, and `claude mcp get serial` showed "Failed to connect". This occurred on Windows when Claude Code started in `C:\Windows\system32` with UAC on. Now the server logs one warning and keeps the trace in memory only: `serial.trace.tail` works, and `serial.trace.status` shows `file_path: null`. The folder rules for the trace file did not change.
+
 ## 0.2.7
 
 ### Fixed

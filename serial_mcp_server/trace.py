@@ -9,6 +9,7 @@ from __future__ import annotations
 import collections
 import copy
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,8 @@ from typing import Any
 TRACE_ENABLED = os.environ.get("SERIAL_MCP_TRACE", "1").lower() not in ("0", "false", "no")
 TRACE_PAYLOADS = os.environ.get("SERIAL_MCP_TRACE_PAYLOADS", "").lower() in ("1", "true", "yes")
 TRACE_MAX_BYTES = int(os.environ.get("SERIAL_MCP_TRACE_MAX_BYTES", "16384"))
+
+logger = logging.getLogger("serial_mcp_server")
 
 # ---------------------------------------------------------------------------
 # Sanitize args
@@ -118,5 +121,11 @@ def init_trace() -> TraceBuffer | None:
     from serial_mcp_server.specs import resolve_spec_root
 
     path = str(resolve_spec_root() / "traces" / "trace.jsonl")
-    _buffer = TraceBuffer(file_path=path)
+    try:
+        _buffer = TraceBuffer(file_path=path)
+    except (OSError, ValueError) as exc:
+        # An unwritable start folder (e.g. C:\Windows\system32) must not stop
+        # the server: keep the in-memory trace, skip the file.
+        logger.warning("Cannot open trace file %s (%s); tracing in memory only.", path, exc)
+        _buffer = TraceBuffer()
     return _buffer

@@ -158,6 +158,24 @@ class TestInitTrace:
         # Reset global
         monkeypatch.setattr("serial_mcp_server.trace._buffer", None)
 
+    def test_unwritable_trace_dir_falls_back_to_memory(self, monkeypatch, tmp_path: Path, caplog):
+        monkeypatch.setattr("serial_mcp_server.trace.TRACE_ENABLED", True)
+        monkeypatch.setattr("serial_mcp_server.trace._buffer", None)
+        # A regular file where the spec folder should be: mkdir fails on every OS
+        blocker = tmp_path / "not-a-dir"
+        blocker.touch()
+        monkeypatch.setenv("SERIAL_MCP_SPEC_ROOT", str(blocker / ".serial_mcp"))
+        from serial_mcp_server.trace import get_trace_buffer, init_trace
+
+        buf = init_trace()
+        assert buf is not None
+        assert buf is get_trace_buffer()
+        assert buf.status()["file_path"] is None
+        buf.emit({"event": "test"})
+        assert len(buf.tail()) == 1
+        assert "tracing in memory only" in caplog.text
+        monkeypatch.setattr("serial_mcp_server.trace._buffer", None)
+
 
 # ---------------------------------------------------------------------------
 # Handler returns enabled=False when tracing off
