@@ -44,6 +44,9 @@ import time
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 2424   # the server's default SERIAL_MCP_MIRROR_TCP_PORT
 RETRY_DELAY = 1.0     # seconds between tries while the mirror is not there
+CONNECT_TIMEOUT = 3.0 # seconds one connection try may take
+RECV_POLL = 0.5       # seconds one read may block. On Windows, Ctrl-C does not interrupt a blocked socket call:
+                      # it takes effect only when the call returns. Short reads let Ctrl-C stop a silent device.
 USAGE = "Usage: serial-watch [port | host port]"
 
 
@@ -92,7 +95,7 @@ def watch(host: str, port: int) -> None:
     waiting_shown = False
     while True:
         try:
-            sock = socket.create_connection((host, port))
+            sock = socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
         except OSError:
             if not waiting_shown:
                 _say(f"Nothing on {host}:{port} yet. Waiting...")
@@ -101,10 +104,13 @@ def watch(host: str, port: int) -> None:
                 _out(".")
         else:
             with sock:
+                sock.settimeout(RECV_POLL)
                 _say(f"Connected to {host}:{port}.")
                 while True:
                     try:
                         data = sock.recv(4096)
+                    except socket.timeout:
+                        continue   # the device is quiet: keep watching
                     except OSError:
                         break
                     if not data:

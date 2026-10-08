@@ -378,7 +378,7 @@ Press Ctrl-C to stop watching. It only watches: it does not send what you type. 
 
 The server's TCP mirror accepts one watcher at a time. A second watcher gets the line "another client is already connected", and its connection ends; `serial-watch` then tries again every second. If you see that line repeat, close the other watcher. If you mirror more than one connection at once (`SERIAL_MCP_MIRROR_TCP_PORT=0`), give each `serial-watch` the port from that connection's `serial.open` response.
 
-Tested on macOS. Windows and Linux are not tested yet: please open an issue if it does not work there.
+Tested on macOS and Windows 11 (ARM64). Linux is not tested yet: please open an issue if it does not work there.
 
 `serial-watch` replaces the `examples/mirror-watch/` scripts of earlier releases of this fork. altairsim ships its own `tools/mirror-watch.sh` for its machine mirror (port 2323); that script is separate and unchanged.
 

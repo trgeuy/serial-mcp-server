@@ -56,3 +56,35 @@ def test_watch_shows_bytes_then_waits(monkeypatch, capsysbinary):
     assert b"A0>DIR\r\n" in out
     assert b"The connection ended. Waiting for the mirror to come back..." in out
     assert out.rstrip().endswith(b"Stopped watching.")
+
+
+def test_watch_keeps_the_connection_while_the_device_is_quiet(monkeypatch, capsysbinary):
+    # Reads time out often so that Ctrl-C works on Windows; a timeout must not count as the end of the connection.
+    monkeypatch.setattr(serial_watch, "RECV_POLL", 0.05)
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def serve():
+        c, _ = srv.accept()
+        threading.Event().wait(0.3)   # quiet for several read timeouts (time.sleep is patched below)
+        c.sendall(b"A0>")
+        c.close()
+        srv.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    calls = []
+
+    def fake_sleep(_):
+        calls.append(1)
+        if len(calls) >= 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(serial_watch.time, "sleep", fake_sleep)
+    assert serial_watch.main(["127.0.0.1", str(port)]) == 0
+    out = capsysbinary.readouterr().out
+    connected = out.index(f"Connected to 127.0.0.1:{port}.".encode())
+    assert out.index(b"A0>") > connected
+    assert out.count(b"The connection ended.") == 1
+    assert out.index(b"The connection ended.") > out.index(b"A0>")
