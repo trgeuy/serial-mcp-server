@@ -5,6 +5,7 @@
 ### Changed
 - The pacing tools (`paced.*`) are now ON by default. Before, they needed `SERIAL_MCP_PACED=1`. This fork is for vintage machines, and its `serial-mcp` skill depends on these tools; without the setting, the agent did not have them. Registered tools do nothing until the agent uses them. Set `SERIAL_MCP_PACED=0` to turn them off. A registration that already sets `SERIAL_MCP_PACED=1` keeps working.
 - README: the registration no longer sets `SERIAL_MCP_PACED=1`.
+- `serial-mcp` skill: the `SSSTAT` example now says what it shows (five `STAT` commands sent in one burst: the first ran, and a leftover `SS` arrived glued onto a later one), and tells the agent to explain it when it passes the example on. Before, the agent quoted `SSSTAT` to users with no explanation.
 
 ## 0.2.4
 

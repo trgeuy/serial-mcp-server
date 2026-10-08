@@ -129,8 +129,10 @@ Disk: <controller, drives or emulator, anything that buffers writes>.
 - **Send one command. Wait until you see the prompt. Then send the next.** Do not send
   several command lines at once. While the machine prints a command's output, it does
   not read the UART. Bytes that arrive then overwrite each other in the one-byte
-  register. No gap value fixes this. Seen on CP/M as `SSSTAT` after a burst of `STAT`
-  commands.
+  register. No gap value fixes this. Seen on CP/M: five `STAT` commands sent in one burst.
+  The first ran; letters of the others were lost, and a leftover `SS` arrived glued onto a
+  later one as `SSSTAT`, an unknown command. If you give this as an example to the user, say
+  what it shows.
 - **A prompt does not always mean the machine is ready.** Some systems print the prompt
   and then do more work. A CP/M BIOS that buffers disk writes writes the buffer out on
   the next console read. So after `ERA`, `REN`, `SAVE` or a file transfer, the prompt
@@ -159,7 +161,7 @@ The kind of damage tells you which gap to change.
 | Garbage, or nothing at all | Wrong line settings, port or cable | Check section 2, step 1. Do not change gaps. |
 | A letter missing inside a line | `inter_char_gap_ms` too short | Increase it. |
 | The start of a line missing, often after a long line | `eol_gap_ms` too short | Increase it. A BASIC line that loses its number runs at once or gives `Syntax error`. |
-| Parts of commands joined or doubled (`SSSTAT`) | Sent while the machine was busy | Send one command at a time (section 5). |
+| Parts of commands joined or doubled (`SSSTAT` from five `STAT` commands sent at once) | Sent while the machine was busy | Send one command at a time (section 5). |
 | The start of the first line lost, the rest correct | Sent before the program was ready | Wait longer after starting the program (section 5). |
 | A stray letter at the start of the next command | Typed during a disk write after the prompt | Wait after the prompt (section 5). |
 | Repeated redraws or bells, the machine looks hung | Keys arrive during a slow screen update | Wait until it is quiet, recover the screen, use a longer gap. |
