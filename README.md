@@ -83,6 +83,12 @@ claude mcp add --scope user serial \
   -- serial_mcp
 ```
 
+On Windows, in PowerShell, type the command on one line. The `\` line breaks above work only in macOS and Linux shells:
+
+```powershell
+claude mcp add --scope user serial -e SERIAL_MCP_MIRROR=ro -e SERIAL_MCP_MIRROR_TRANSPORT=tcp -- serial_mcp
+```
+
 If you already have Python 3.11 or newer, you can use pip in place of `uv tool install`:
 
 ```bash
