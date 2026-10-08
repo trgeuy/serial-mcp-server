@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.7
+
+### Fixed
+- The TCP mirror now runs on Windows. Before, the server turned the mirror off on Windows for every `SERIAL_MCP_MIRROR` value, so `serial.open` returned no mirror and `serial-watch` waited on a port where nothing listened. That check came from the time when the PTY transport was the only one, and Windows has no pseudo-terminal. Now only the PTY transport is turned off on Windows, and the warning tells you to set `SERIAL_MCP_MIRROR_TRANSPORT=tcp`.
+
+### Changed
+- README: the Quickstart registration also has a one-line form for PowerShell. The `\` line breaks work only in macOS and Linux shells.
+
+Tested on Windows 11 ARM64 with Claude Code, a real FTDI COM port and `serial-watch`.
+
 ## 0.2.6
 
 ### Fixed
