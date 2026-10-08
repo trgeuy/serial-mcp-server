@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+
+### Fixed
+- `serial-watch` on Windows: Ctrl-C now stops it while the device is quiet. Before, a watcher connected to a quiet device (for example a CP/M machine at its `A>` prompt) ignored Ctrl-C until the device sent its next byte. On Windows, Ctrl-C does not interrupt a socket read that is waiting; it takes effect only when the read returns. Reads now return every half second, so Ctrl-C works within about 0.5 s. A connection try now stops after 3 s for the same reason. macOS and Linux were not affected, and the output is unchanged.
+
+### Changed
+- README: `serial-watch` is tested on macOS and Windows 11 (ARM64). Linux is not tested yet.
+
 ## 0.2.5
 
 ### Changed
