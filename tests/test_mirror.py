@@ -854,6 +854,42 @@ class TestTelnetFilter:
         )
         assert f.feed(stream) == b"STAT\r"
 
+    # Telnet end of line (RFC 854): CR LF and CR NUL become one CR.
+    def test_cr_lf_becomes_cr(self):
+        # PuTTY's default Enter ("Telnet New Line"); a Unix console ran an
+        # empty command for the LF and printed two prompts.
+        f = _TelnetFilter()
+        assert f.feed(b"date\r\n") == b"date\r"
+
+    def test_cr_nul_becomes_cr(self):
+        # PuTTY's Enter with "Telnet New Line" off; 2.11 BSD echoed the NUL as ^@.
+        f = _TelnetFilter()
+        assert f.feed(b"date\r\x00") == b"date\r"
+
+    def test_cr_goes_out_before_its_lf_or_nul_arrives(self):
+        f = _TelnetFilter()
+        assert f.feed(b"date\r") == b"date\r"
+        assert f.feed(b"\n") == b""
+        assert f.feed(b"\r") == b"\r"
+        assert f.feed(b"\x00ls\r") == b"ls\r"
+
+    def test_lf_and_nul_not_after_cr_pass_through(self):
+        f = _TelnetFilter()
+        assert f.feed(b"a\nb\x00c") == b"a\nb\x00c"
+
+    def test_only_one_byte_after_cr_is_dropped(self):
+        f = _TelnetFilter()
+        assert f.feed(b"\r\n\n") == b"\r\n"
+
+    def test_cr_cr_keeps_both(self):
+        f = _TelnetFilter()
+        assert f.feed(b"\r\r\n") == b"\r\r"
+
+    def test_command_between_cr_and_lf(self):
+        # An IAC command between CR and its LF does not let the LF through.
+        f = _TelnetFilter()
+        assert f.feed(b"\r" + bytes([0xFF, 0xFD, 0x01]) + b"\nx") == b"\rx"
+
 
 # ---------------------------------------------------------------------------
 # create_reader factory

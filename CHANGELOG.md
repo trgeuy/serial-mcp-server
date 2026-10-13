@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.9
+
+### Fixed
+- Telnet mode (`SERIAL_MCP_MIRROR_TCP_TELNET=1`): the Enter key from a telnet client now reaches the device as one CR. A telnet client sends Enter as CR LF or CR NUL (RFC 854), and the server sent both bytes to the serial port. A Unix console then ran an empty command for the LF and printed two prompts for each Enter (PuTTY's default), or showed the NUL as `^@` (PuTTY with "Telnet New Line" off). CP/M ignores both bytes, so tests on an Altair did not show the problem. Now the server sends the CR at once and drops the LF or NUL after it, also when it arrives in the next read. Without telnet mode, nothing changed.
+
+### Changed
+- README: new section "Typing along with the agent on Windows": a read-write mirror with PuTTY over the TCP transport.
+
+Tested on Windows 11 ARM64 with Claude Code, PuTTY (Telnet, default settings) and a PiDP-11 (2.11 BSD) console on an FTDI COM port.
+
 ## 0.2.8
 
 ### Fixed

@@ -392,7 +392,7 @@ Tested on macOS and Windows 11 (ARM64). Linux is not tested yet: please open an 
 
 A real telnet client echoes what you type in its own window. The device on the other end often echoes the same keystrokes back too. Without any negotiation, you see each character twice.
 
-Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix this: the server tells the client it will handle echoing, so the client's local echo turns off. This also strips telnet's own protocol bytes out of the mirrored stream so they never reach the serial device. Turn it on only for real telnet clients — a plain socket tool like `nc` does not expect these bytes and does not need it.
+Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix this: the server tells the client it will handle echoing, so the client's local echo turns off. This also strips telnet's own protocol bytes out of the mirrored stream so they never reach the serial device. It also changes the Enter key: a telnet client sends Enter as CR LF or as CR NUL, and the server sends only the CR to the device, as a serial terminal does. Without this, a Unix console runs an empty command for the LF (two prompts for each Enter) or shows the NUL as `^@`. Turn it on only for real telnet clients — a plain socket tool like `nc` does not expect these bytes and does not need it.
 
 ```bash
 claude mcp add serial \
@@ -401,6 +401,24 @@ claude mcp add serial \
   -e SERIAL_MCP_MIRROR_TCP_TELNET=1 \
   -- serial_mcp
 ```
+
+### Typing along with the agent on Windows
+
+Windows has no PTY, so the read-write mirror uses the TCP transport, and you type through a telnet client. Tested with PuTTY on Windows 11 (ARM64), with a PDP-11 (2.11 BSD) console on a COM port.
+
+1. Register a second server for the times when you and the agent both type. Your `serial` server then stays read-only. In PowerShell, on one line:
+
+   ```powershell
+   claude mcp add --scope user serial-shared -e SERIAL_MCP_MIRROR=rw -e SERIAL_MCP_MIRROR_TRANSPORT=tcp -e SERIAL_MCP_MIRROR_TCP_TELNET=1 -e SERIAL_MCP_MIRROR_TCP_PORT=2425 -- serial_mcp
+   ```
+
+   Port 2425 keeps its mirror apart from the `serial` server's mirror on 2424.
+2. Tell the agent to use `serial-shared` and open the port. The mirror starts only when the port is open.
+3. In PuTTY, set **Connection type** to **Telnet**, **Host Name** to `127.0.0.1`, and **Port** to `2425`. Keep all other settings at their defaults. Click **Open**, then press Enter to get a new prompt.
+
+When the agent closes the port, the mirror closes too, and PuTTY closes its window. Open the PuTTY session again after the agent opens the port again.
+
+The agent does not see your keystrokes. It sees what the device echoes back, as on a real terminal line. Do not open the COM port in PuTTY itself while the agent has it open: Windows lets only one program use a COM port.
 
 ### Modes
 

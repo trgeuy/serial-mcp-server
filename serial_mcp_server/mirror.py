@@ -80,6 +80,13 @@ class _TelnetFilter:
     subnegotiation blocks, while passing an escaped literal 0xFF (IAC IAC)
     through as a single data byte. State survives across ``feed()`` calls
     so a command split across two TCP reads is still handled correctly.
+
+    It also applies telnet's end-of-line rule (RFC 854): a client never sends
+    a bare CR, but CR LF (a new line) or CR NUL (a bare CR). The serial device
+    must get the single CR that its Enter key sends on a real line. Without
+    this, a Unix console runs an empty command for the LF (two prompts per
+    Enter), and it shows the NUL as ``^@``. The CR goes out at once; the LF or
+    NUL right after it is dropped, also when it arrives in the next read.
     """
 
     _DATA = 0
@@ -90,6 +97,7 @@ class _TelnetFilter:
 
     def __init__(self) -> None:
         self._state = self._DATA
+        self._after_cr = False  # the last data byte was CR: drop a LF or NUL next
 
     def feed(self, data: bytes) -> bytes:
         out = bytearray()
@@ -97,11 +105,15 @@ class _TelnetFilter:
             if self._state == self._DATA:
                 if b == _TN_IAC:
                     self._state = self._IAC
+                elif self._after_cr and b in (0x0A, 0x00):
+                    self._after_cr = False  # CR LF or CR NUL: the CR already went out
                 else:
                     out.append(b)
+                    self._after_cr = b == 0x0D
             elif self._state == self._IAC:
                 if b == _TN_IAC:
                     out.append(b)  # escaped literal 0xFF
+                    self._after_cr = False
                     self._state = self._DATA
                 elif b in (_TN_WILL, _TN_WONT, _TN_DO, _TN_DONT):
                     self._state = self._CMD
@@ -597,7 +609,9 @@ class TcpMirrorSession(ReaderThread):
     sends a WILL ECHO + WILL SUPPRESS-GO-AHEAD negotiation on accept (so the
     client stops local-echoing and lets the device's own remote echo show
     through once), strips any IAC command bytes the client sends back out of
-    the incoming stream before it can reach the serial port, and escapes any
+    the incoming stream before it can reach the serial port, turns the
+    client's CR LF / CR NUL end of line into the single CR a serial device
+    expects (see _TelnetFilter), and escapes any
     literal 0xFF byte in outgoing device data as IAC IAC so a real telnet
     client's own parser doesn't misread raw device output as a command. A
     plain socket client (e.g. ``nc``, a test harness) is unaffected either

@@ -230,10 +230,11 @@ A real telnet client echoes what you type in its own window. If the device on th
 
 Set `SERIAL_MCP_MIRROR_TCP_TELNET=1` to fix it. On each new client connection, the server sends two standard telnet negotiation commands: `IAC WILL ECHO` and `IAC WILL SUPPRESS-GO-AHEAD` (RFC 854 and RFC 857). A real telnet client responds to `WILL ECHO` by turning off its own local echo, since the server is now saying it owns echo. The server does not need to inspect the client's reply — its own behavior does not change either way, so any negotiation reply from the client is simply recognized and dropped rather than forwarded to the serial device as garbage bytes.
 
-Two related pieces, both driven by the same setting:
+Three related pieces, all driven by the same setting:
 
 - **Outgoing device data**: if a byte value `0xFF` (the telnet `IAC` byte) ever appears in real device output, it is escaped as `IAC IAC` before being sent to the client. Otherwise a real telnet client's own parser would misread that single byte as the start of a command and eat it.
 - **Incoming client data**: any telnet command bytes the client sends (negotiation replies, or anything else wrapped in `IAC`) are stripped out before the rest reaches `_forward_or_drop`. Only real keystrokes ever reach the serial port.
+- **End of line**: a telnet client never sends a bare CR. It sends Enter as CR LF or CR NUL (RFC 854). The server sends the CR to the device at once and drops the LF or NUL after it, so the device gets the single CR that a serial terminal's Enter key sends. Without this, a Unix console runs an empty command for the LF (two prompts for each Enter) and shows the NUL as `^@`.
 
 Turn this on only when the client is a real telnet program. A plain socket tool (`nc`, a test script, `serial-watch`) does not speak the telnet protocol, does not expect these extra bytes, and does not need this setting.
 
